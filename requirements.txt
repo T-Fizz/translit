@@ -1,0 +1,10 @@
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+pydantic==2.11.*
+python-dotenv==1.1.*
+httpx==0.28.*
+pykakasi==2.*
+pypinyin==0.*
+supabase==2.13.*
+pytest
+pytest-asyncio

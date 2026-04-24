@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+.pytest_cache/
+.env
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+*.swp
+
+# Claude Code
+.claude/
+
+# Logs
+*.log
+
+# Fly.io (fly.toml is tracked intentionally)
