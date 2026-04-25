@@ -179,6 +179,34 @@ def test_japanese_name_in_katakana_falls_through():
     assert transliterate("タナカ", "en") == "Tanaka"
 
 
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("タロウ", "Taro"),     # would be "Tallow" without the hint
+        ("レン", "Ren"),         # would be "Len"
+        ("ゼン", "Zen"),         # would be "Then"
+        ("ノブ", "Nobu"),        # would be "Knob"
+        ("テル", "Teru"),        # would be "Tel"
+        ("ハル", "Haru"),        # would be "Hal"
+        ("ケイ", "Kei"),         # would be "Kay"
+        ("メグ", "Megu"),        # would be "Meg"
+    ],
+)
+def test_ja_hint_disables_western_round_trip(name, expected):
+    """When the caller asserts source_lang='ja', the reverse-alkana lookup
+    is skipped — common Japanese names that phonetically match English words
+    must not be mistaken for Western loanwords."""
+    assert transliterate(name, "en", source_lang="ja") == expected
+
+
+def test_no_hint_keeps_western_round_trip():
+    """Round-trip path is intact for unhinted callers — same names without
+    a hint still resolve via reverse-alkana. The hint is a per-call opt-out,
+    not a global one."""
+    assert transliterate("タロウ", "en") == "Tallow"
+    assert transliterate("ヴィクター", "en") == "Victor"
+
+
 # === Acronym letter-by-letter fallback ====================================
 
 @pytest.mark.parametrize(

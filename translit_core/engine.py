@@ -218,7 +218,7 @@ def _alkana_lookup(word: str) -> str | None:
 
 # --- romanizers -------------------------------------------------------------
 
-def _ja_to_romaji(name: str) -> str | None:
+def _ja_to_romaji(name: str, caller_hinted_ja: bool = False) -> str | None:
     try:
         import pykakasi
     except ImportError:
@@ -250,7 +250,12 @@ def _ja_to_romaji(name: str) -> str | None:
     # try recovering the original Western spelling from reverse-alkana
     # before falling back to pykakasi's literal kana romanization.
     # ヴィクター → 'Victor' (good) vs pykakasi's 'Buikutaa' (bad).
-    if _is_all_katakana(stem):
+    #
+    # Skipped when the caller hinted source_lang='ja' — they're asserting this
+    # is a Japanese name, so we should NOT second-guess as a Western loanword.
+    # Many common JA names happen to phonetically match English words via the
+    # reverse map (タロウ→Tallow, レン→Len, ゼン→Then, ノブ→Knob, ハル→Hal, ケイ→Kay).
+    if not caller_hinted_ja and _is_all_katakana(stem):
         western = _katakana_to_western(stem)
         if western is not None:
             return western + honorific_roman
@@ -362,7 +367,7 @@ def transliterate(name: str, target_lang: str, source_lang: str | None = None) -
     if target_lang not in _LATIN_TARGETS:
         return None
     if src == "ja":
-        return _ja_to_romaji(name)
+        return _ja_to_romaji(name, caller_hinted_ja=(source_lang == "ja"))
     if src == "zh":
         return _zh_to_pinyin(name)
     return None
