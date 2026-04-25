@@ -26,8 +26,9 @@ curl -X POST https://translit.example.com/v1/transliterate \
 
 | Source script | Target | Method |
 |---|---|---|
-| Japanese (kana + kanji) | Latin | `pykakasi` + Hepburn + honorific dictionary |
+| Japanese (kana + kanji) | Latin | `pykakasi` (passport-style Hepburn) + honorific dictionary |
 | Chinese (Hanzi) | Latin | `pypinyin` (no tone marks) |
+| English (Latin)         | Japanese (katakana) | `alkana` dictionary; multi-word names join with `・` |
 
 See [DESIGN.md → Roadmap](DESIGN.md) for what's coming.
 

@@ -19,6 +19,7 @@ classifiers = [
 dependencies = [
     "pykakasi>=2.0,<3",
     "pypinyin>=0.50,<1",
+    "alkana>=0.0.3",
 ]
 
 [project.optional-dependencies]

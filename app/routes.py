@@ -28,19 +28,25 @@ MAX_BATCH_BODY_BYTES = 10 * 1024
 router = APIRouter(prefix="/v1")
 
 
-def _method_for(source_lang: str) -> str:
+def _method_for(source_lang: str, target_lang: str) -> str:
     if source_lang == "ja":
         return "pykakasi"
     if source_lang == "zh":
         return "pypinyin"
+    if source_lang in ("en", "latin") and target_lang == "ja":
+        return "alkana"
     return "unknown"
 
 
-def _resolve_source(name: str, hint: str | None) -> tuple[str | None, str]:
+def _resolve_source(name: str, hint: str | None, target_lang: str) -> tuple[str | None, str]:
     """Return (resolved_src_or_None_if_unsupported, detected_or_''_if_none)."""
     detected = engine.detect_source_script(name)
-    if detected is None or detected == "latin":
-        return None, detected or ""
+    if detected is None:
+        return None, ""
+    # Latin source is supported only when paired with a non-Latin target
+    # the engine knows how to render (currently: ja katakana via alkana).
+    if detected == "latin" and target_lang != "ja":
+        return None, detected
     resolved = hint or detected
     if hint == "ja" and detected == "zh":
         resolved = "ja"
@@ -50,7 +56,7 @@ def _resolve_source(name: str, hint: str | None) -> tuple[str | None, str]:
 
 
 def _lookup(cache: TieredCache, req: TransliterateRequest) -> TransliterateResponse:
-    resolved, detected = _resolve_source(req.name, req.source_lang)
+    resolved, detected = _resolve_source(req.name, req.source_lang, req.target_lang)
     if resolved is None:
         return TransliterateResponse(
             phonetic=None,
@@ -83,7 +89,7 @@ def _lookup(cache: TieredCache, req: TransliterateRequest) -> TransliterateRespo
             reason="unsupported_pair",
         )
 
-    method = _method_for(resolved)
+    method = _method_for(resolved, req.target_lang)
     cache.put(
         CacheEntry(
             hash=key,

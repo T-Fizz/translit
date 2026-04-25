@@ -151,6 +151,51 @@ def test_latin_input_returns_reason(client, auth_headers):
     assert body["reason"] == "unsupported_pair"
 
 
+# --- en → ja katakana (alkana) ---------------------------------------------
+
+def test_en_to_katakana_single_word(client, auth_headers):
+    r = client.post(
+        "/v1/transliterate",
+        json={"name": "John", "target_lang": "ja"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["phonetic"] == "ジョン"
+    assert body["method"] == "alkana"
+    assert body["target_lang"] == "ja"
+    assert body["cached"] is False
+
+
+def test_en_to_katakana_multi_word(client, auth_headers):
+    r = client.post(
+        "/v1/transliterate",
+        json={"name": "John Smith", "target_lang": "ja"},
+        headers=auth_headers,
+    )
+    assert r.json()["phonetic"] == "ジョン・スミス"
+
+
+def test_en_to_katakana_unknown_word_unsupported(client, auth_headers):
+    r = client.post(
+        "/v1/transliterate",
+        json={"name": "Joaquin", "target_lang": "ja"},
+        headers=auth_headers,
+    )
+    body = r.json()
+    assert body["phonetic"] is None
+    assert body["reason"] == "unsupported_pair"
+
+
+def test_en_to_katakana_caches(client, auth_headers):
+    payload = {"name": "Christopher", "target_lang": "ja"}
+    r1 = client.post("/v1/transliterate", json=payload, headers=auth_headers)
+    r2 = client.post("/v1/transliterate", json=payload, headers=auth_headers)
+    assert r1.json()["cached"] is False
+    assert r2.json()["cached"] is True
+    assert r1.json()["phonetic"] == r2.json()["phonetic"] == "クリストファー"
+
+
 # --- validation -------------------------------------------------------------
 
 def test_missing_name_is_400(client, auth_headers):

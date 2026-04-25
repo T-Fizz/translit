@@ -160,6 +160,27 @@ def _zh_to_pinyin(name: str) -> str | None:
     return " ".join(w.capitalize() for w in words if w)
 
 
+def _en_to_katakana(name: str) -> str | None:
+    """English (Latin script) → katakana via the alkana dictionary.
+
+    All-or-nothing: if any whitespace-split word misses the dict, return
+    None rather than a partially-romanized garble. Words are joined with
+    '・' (Japanese full-width middle dot), the conventional separator for
+    foreign personal names (ジョン・スミス).
+    """
+    try:
+        import alkana
+    except ImportError:
+        return None
+    parts = name.strip().split()
+    if not parts:
+        return None
+    katas = [alkana.get_kana(p) for p in parts]
+    if any(k is None for k in katas):
+        return None
+    return "・".join(katas)
+
+
 # --- public API -------------------------------------------------------------
 
 def transliterate(name: str, target_lang: str, source_lang: str | None = None) -> str | None:
@@ -171,7 +192,7 @@ def transliterate(name: str, target_lang: str, source_lang: str | None = None) -
     if not name:
         return None
     src = detect_source_script(name)
-    if src is None or src == "latin":
+    if src is None:
         return None
 
     # Caller hint wins for CJK ambiguity.
@@ -180,9 +201,14 @@ def transliterate(name: str, target_lang: str, source_lang: str | None = None) -
     elif source_lang == "zh" and src == "ja":
         src = "zh"
 
+    # en (Latin script) → ja (katakana) — alkana lookup
+    if src == "latin" and target_lang == "ja":
+        return _en_to_katakana(name)
+    if src == "latin":
+        return None  # Latin → Latin isn't transliteration
+
     if target_lang not in _LATIN_TARGETS:
         return None
-
     if src == "ja":
         return _ja_to_romaji(name)
     if src == "zh":
@@ -193,6 +219,7 @@ def transliterate(name: str, target_lang: str, source_lang: str | None = None) -
 def supported_pairs() -> list[dict]:
     """What (source_script, target_lang) combinations this service handles deterministically."""
     return [
-        {"source": "ja", "target": "latin", "method": "pykakasi+hepburn+honorifics"},
+        {"source": "ja", "target": "latin", "method": "pykakasi+passport+honorifics"},
         {"source": "zh", "target": "latin", "method": "pypinyin (no tones)"},
+        {"source": "en", "target": "ja", "method": "alkana"},
     ]
