@@ -17,6 +17,7 @@ curl -X POST https://translit.example.com/v1/transliterate \
 
 ## Documents
 
+- **[INTERNALS.md](INTERNALS.md)** — engine deep-dive: how the wrapper works, every edge case we hit, and the hard problems we couldn't solve
 - **[TENETS.md](TENETS.md)** — non-negotiable principles
 - **[DESIGN.md](DESIGN.md)** — architecture, API contract, data model, roadmap
 - **[SLA.md](SLA.md)** — uptime, latency, rate limits, versioning

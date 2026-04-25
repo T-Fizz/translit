@@ -11,6 +11,17 @@ original name.
 """
 from __future__ import annotations
 
+import unicodedata
+
+
+def _normalize(s: str) -> str:
+    """NFKC-normalize input — folds half-width katakana to full-width
+    (ｶﾅ → カナ), full-width Latin to ASCII (Ｊｏｈｎ → John), and standardizes
+    voiced kana (ｶ + ﾞ → ガ). Lets all downstream code assume canonical
+    forms without touching half-width edge cases."""
+    return unicodedata.normalize("NFKC", s)
+
+
 # --- script detection -------------------------------------------------------
 
 _HIRAGANA = (0x3040, 0x309F)
@@ -34,7 +45,7 @@ def detect_source_script(name: str) -> str | None:
     total = 0
     has_kana = False
     has_cjk = False
-    for ch in name:
+    for ch in _normalize(name):
         if not ch.isalpha():
             continue
         total += 1
@@ -110,6 +121,15 @@ def _ja_to_romaji(name: str) -> str | None:
     except ImportError:
         return None
 
+    # Strip non-alphabetic chars (punctuation, digits, emoji, whitespace)
+    # before honorific detection or pykakasi sees the input. pykakasi has a
+    # quirk where whitespace/emoji tokens cause it to duplicate adjacent
+    # alpha tokens; removing those characters sidesteps the issue and also
+    # means we don't have to filter punctuation from output. Spaces in the
+    # output come from pykakasi's own morpheme boundaries.
+    name = "".join(c for c in _normalize(name) if c.isalpha())
+    if not name:
+        return None
     honorific_roman = ""
     stem = name
     tail_hira = _katakana_to_hiragana(name)
@@ -134,10 +154,24 @@ def _ja_to_romaji(name: str) -> str | None:
     # Tokens are joined with spaces so multi-kanji names split at
     # pykakasi's morpheme boundaries (山田太郎 → "Yamada Taro").
     k = pykakasi.kakasi()
+    parts = k.convert(stem)
+    # Coverage check: every alphabetic character in the input must show up
+    # in pykakasi's `orig` output. Catches silent dropout of unknown kanji
+    # (e.g. 𠮷 in 𠮷田 — the 𠮷 disappears entirely from the parts list).
+    # Set-based comparison so we tolerate pykakasi's habit of duplicating
+    # tokens around whitespace/emoji.
+    input_alpha = {c for c in stem if c.isalpha()}
+    covered_alpha = {c for p in parts for c in p["orig"] if c.isalpha()}
+    if not input_alpha.issubset(covered_alpha):
+        return None
     tokens: list[str] = []
-    for p in k.convert(stem):
+    for p in parts:
         t = p["passport"]
         if not t.strip():
+            continue
+        # Drop pykakasi-emitted punctuation/digits — they aren't part of
+        # the name (e.g. 「田中」 would otherwise come back as "( Tanaka )").
+        if not any(c.isalpha() for c in p["orig"]):
             continue
         if t.endswith("ou"):
             t = t[:-2] + "o"
@@ -191,6 +225,7 @@ def transliterate(name: str, target_lang: str, source_lang: str | None = None) -
     """
     if not name:
         return None
+    name = _normalize(name)
     src = detect_source_script(name)
     if src is None:
         return None
