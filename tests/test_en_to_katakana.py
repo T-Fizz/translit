@@ -84,9 +84,10 @@ def test_partial_miss_returns_none_not_partial():
 
 # --- Diacritics & punctuation: alkana is ASCII-only ------------------------
 
-@pytest.mark.parametrize("name", ["Müller", "café", "O'Brien", "Mary-Jane"])
-def test_non_ascii_or_punctuated_returns_none(name):
-    """alkana's dict is ASCII-only — non-ASCII or punctuated names miss."""
+@pytest.mark.parametrize("name", ["Müller", "café", "O'Brien"])
+def test_non_ascii_or_unsupported_punctuation(name):
+    """alkana's dict is ASCII-only — diacritics and apostrophe-prefixed
+    names miss. (Mary-Jane works because we split on hyphens.)"""
     assert transliterate(name, "ja") is None
 
 

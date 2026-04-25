@@ -17,11 +17,11 @@ curl -X POST https://translit.example.com/v1/transliterate \
 
 ## Documents
 
-- **[INTERNALS.md](INTERNALS.md)** — engine deep-dive: how the wrapper works, every edge case we hit, and the hard problems we couldn't solve
-- **[TENETS.md](TENETS.md)** — non-negotiable principles
-- **[DESIGN.md](DESIGN.md)** — architecture, API contract, data model, roadmap
-- **[SLA.md](SLA.md)** — uptime, latency, rate limits, versioning
-- **[COMPETITIVE_ANALYSIS.md](COMPETITIVE_ANALYSIS.md)** — honest survey of existing services
+- **[docs/INTERNALS.md](docs/INTERNALS.md)** — engine deep-dive: how the wrapper works, every edge case we hit, and the hard problems we couldn't solve
+- **[docs/TENETS.md](docs/TENETS.md)** — non-negotiable principles
+- **[docs/DESIGN.md](docs/DESIGN.md)** — architecture, API contract, data model, roadmap
+- **[docs/SLA.md](docs/SLA.md)** — uptime, latency, rate limits, versioning
+- **[docs/COMPETITIVE_ANALYSIS.md](docs/COMPETITIVE_ANALYSIS.md)** — honest survey of existing services
 
 ## Currently supported
 
@@ -31,7 +31,7 @@ curl -X POST https://translit.example.com/v1/transliterate \
 | Chinese (Hanzi) | Latin | `pypinyin` (no tone marks) |
 | English (Latin)         | Japanese (katakana) | `alkana` dictionary; multi-word names join with `・` |
 
-See [DESIGN.md → Roadmap](DESIGN.md) for what's coming.
+See [docs/DESIGN.md → Roadmap](docs/DESIGN.md) for what's coming.
 
 ## Local development
 

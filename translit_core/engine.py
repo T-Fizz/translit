@@ -113,6 +113,109 @@ def _katakana_to_hiragana(s: str) -> str:
     )
 
 
+# --- reverse-alkana (katakana → English name round-trip) -------------------
+
+_REVERSE_ALKANA: dict[str, str] | None = None
+
+
+def _build_reverse_alkana() -> dict[str, str]:
+    """Build a katakana → English reverse map from alkana's dictionary on
+    first use. Multiple English words may map to the same katakana
+    (homophones); we pick the alphabetically-first deterministically."""
+    global _REVERSE_ALKANA
+    if _REVERSE_ALKANA is not None:
+        return _REVERSE_ALKANA
+    try:
+        import alkana
+    except ImportError:
+        _REVERSE_ALKANA = {}
+        return _REVERSE_ALKANA
+    rev: dict[str, str] = {}
+    for eng, kata in alkana.data.data.items():
+        if kata not in rev or eng < rev[kata]:
+            rev[kata] = eng
+    _REVERSE_ALKANA = rev
+    return rev
+
+
+def _katakana_to_western(name: str) -> str | None:
+    """Look up an all-katakana name in reverse-alkana to recover the
+    original Western spelling (ヴィクター → 'Victor'). All-or-nothing
+    across ・-separated tokens."""
+    rev = _build_reverse_alkana()
+    parts = [p for p in name.split("・") if p]
+    if not parts:
+        return None
+    out: list[str] = []
+    for p in parts:
+        # Strip any non-katakana noise within a piece before lookup
+        clean = "".join(c for c in p if 0x30A0 <= ord(c) <= 0x30FF)
+        if not clean:
+            return None
+        eng = rev.get(clean)
+        if eng is None:
+            return None
+        out.append(eng.title())
+    return " ".join(out)
+
+
+def _is_all_katakana(s: str) -> bool:
+    """True if every alphabetic character in `s` is katakana (incl. ー
+    prolong mark and ・ middle dot). Non-alpha noise is skipped."""
+    seen = False
+    for c in s:
+        if 0x30A0 <= ord(c) <= 0x30FF:
+            seen = True
+            continue
+        if c.isalpha():
+            return False  # a non-katakana letter (kanji, hiragana, latin)
+    return seen
+
+
+# --- en → katakana fallbacks (acronyms, punctuation handling) --------------
+
+_LETTER_TO_KATAKANA = {
+    "a": "エー", "b": "ビー", "c": "シー", "d": "ディー", "e": "イー",
+    "f": "エフ", "g": "ジー", "h": "エイチ", "i": "アイ", "j": "ジェイ",
+    "k": "ケー", "l": "エル", "m": "エム", "n": "エヌ", "o": "オー",
+    "p": "ピー", "q": "キュー", "r": "アール", "s": "エス", "t": "ティー",
+    "u": "ユー", "v": "ブイ", "w": "ダブリュー", "x": "エックス", "y": "ワイ",
+    "z": "ゼット",
+}
+
+
+def _en_acronym_to_katakana(word: str) -> str | None:
+    """Letter-by-letter katakana for ASCII uppercase acronyms (FBI →
+    エフビーアイ). Real Japanese reads English acronyms by letter name.
+    Activated only when alkana misses AND input is 2+ uppercase letters."""
+    if len(word) < 2 or not word.isupper():
+        return None
+    if not all(c.isascii() and c.isalpha() for c in word):
+        return None
+    return "".join(_LETTER_TO_KATAKANA[c.lower()] for c in word)
+
+
+def _alkana_lookup(word: str) -> str | None:
+    """Look up an English word in alkana with progressive cleanup.
+
+    Tries: exact match → trailing-punctuation-stripped → acronym fallback.
+    """
+    try:
+        import alkana
+    except ImportError:
+        return None
+    result = alkana.get_kana(word)
+    if result is not None:
+        return result
+    cleaned = word.rstrip(".,;:!?")
+    if cleaned and cleaned != word:
+        result = alkana.get_kana(cleaned)
+        if result is not None:
+            return result
+        word = cleaned
+    return _en_acronym_to_katakana(word)
+
+
 # --- romanizers -------------------------------------------------------------
 
 def _ja_to_romaji(name: str) -> str | None:
@@ -121,13 +224,10 @@ def _ja_to_romaji(name: str) -> str | None:
     except ImportError:
         return None
 
-    # Strip non-alphabetic chars (punctuation, digits, emoji, whitespace)
-    # before honorific detection or pykakasi sees the input. pykakasi has a
-    # quirk where whitespace/emoji tokens cause it to duplicate adjacent
-    # alpha tokens; removing those characters sidesteps the issue and also
-    # means we don't have to filter punctuation from output. Spaces in the
-    # output come from pykakasi's own morpheme boundaries.
-    name = "".join(c for c in _normalize(name) if c.isalpha())
+    # Strip non-alphabetic chars before honorific detection / pykakasi.
+    # We keep ・ (foreign-name separator) so multi-word katakana names like
+    # ジョン・スミス can round-trip through reverse-alkana below.
+    name = "".join(c for c in _normalize(name) if c.isalpha() or c == "・")
     if not name:
         return None
     honorific_roman = ""
@@ -145,6 +245,21 @@ def _ja_to_romaji(name: str) -> str | None:
             stem = stem[:-len(suffix)]
             honorific_roman = roman
             break
+
+    # Round-trip path: if the stem is pure katakana (with optional ・ or ー),
+    # try recovering the original Western spelling from reverse-alkana
+    # before falling back to pykakasi's literal kana romanization.
+    # ヴィクター → 'Victor' (good) vs pykakasi's 'Buikutaa' (bad).
+    if _is_all_katakana(stem):
+        western = _katakana_to_western(stem)
+        if western is not None:
+            return western + honorific_roman
+
+    # ・ was only relevant for the reverse-alkana split — pykakasi doesn't
+    # know what to do with it.
+    stem = stem.replace("・", "")
+    if not stem:
+        return None
 
     # 'passport' is pykakasi's simplified-Hepburn field, modeled on the
     # romanization Japanese passports use. It handles most mid-word long
@@ -195,21 +310,23 @@ def _zh_to_pinyin(name: str) -> str | None:
 
 
 def _en_to_katakana(name: str) -> str | None:
-    """English (Latin script) → katakana via the alkana dictionary.
+    """English (Latin script) → katakana.
 
-    All-or-nothing: if any whitespace-split word misses the dict, return
-    None rather than a partially-romanized garble. Words are joined with
-    '・' (Japanese full-width middle dot), the conventional separator for
-    foreign personal names (ジョン・スミス).
+    Pipeline per word: alkana → trailing-punctuation strip and retry →
+    A–Z acronym fallback. Hyphenated names split into pieces and look up
+    each. All-or-nothing: any miss returns None for the whole input.
+    Output joins pieces with '・' (foreign-name separator).
     """
-    try:
-        import alkana
-    except ImportError:
-        return None
     parts = name.strip().split()
     if not parts:
         return None
-    katas = [alkana.get_kana(p) for p in parts]
+    expanded: list[str] = []
+    for p in parts:
+        # Hyphenated names split at hyphens (Mary-Jane → ['Mary', 'Jane']).
+        for sub in p.split("-"):
+            if sub:
+                expanded.append(sub)
+    katas = [_alkana_lookup(p) for p in expanded]
     if any(k is None for k in katas):
         return None
     return "・".join(katas)

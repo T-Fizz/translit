@@ -145,32 +145,110 @@ def test_long_input_does_not_crash():
     assert len(out) > 0
 
 
-# === Round-trip lost-information cases (xfail) ============================
+# === Katakana → Western name round-trip (reverse-alkana) ==================
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Round-trip katakana-loanword names (ヴィクター → 'Victor') need "
-    "a Western-name dictionary, not raw kana romanization. Currently emits "
-    "'Buikutaa'. Out of scope for v1.",
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("ヴィクター", "Victor"),
+        ("マイケル", "Michael"),
+        ("ジョン", "John"),
+        ("クリストファー", "Christopher"),
+        ("メアリー", "Mary"),
+    ],
 )
-def test_katakana_western_name_round_trip():
-    assert transliterate("ヴィクター", "en") == "Victor"
+def test_katakana_western_name_round_trip(name, expected):
+    """All-katakana input is looked up in a reverse-alkana map first —
+    recovers the original Western spelling instead of pykakasi's literal
+    kana romanization (which would give 'Buikutaa' for ヴィクター)."""
+    assert transliterate(name, "en") == expected
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Acronyms aren't consistently in alkana's dictionary (FBI/USA "
-    "miss; NASA/IBM hit). Letter-by-letter fallback (FBI → エフビーアイ) "
-    "would close the gap. v1.1 candidate.",
+def test_katakana_multi_word_round_trip():
+    assert transliterate("ジョン・スミス", "en") == "John Smith"
+
+
+def test_katakana_with_honorific_round_trip():
+    """Honorific stripped first, then the bare katakana name round-trips."""
+    assert transliterate("ヴィクターさん", "en") == "Victor-san"
+
+
+def test_japanese_name_in_katakana_falls_through():
+    """Japanese names like タナカ aren't in alkana's reverse map, so we
+    fall through to pykakasi which produces the same answer anyway."""
+    assert transliterate("タナカ", "en") == "Tanaka"
+
+
+# === Acronym letter-by-letter fallback ====================================
+
+@pytest.mark.parametrize(
+    "acro, expected",
+    [
+        ("FBI", "エフビーアイ"),
+        ("USA", "ユーエスエー"),
+        ("CEO", "シーイーオー"),
+        ("AI",  "エーアイ"),
+        ("UK",  "ユーケー"),
+        ("EU",  "イーユー"),
+        ("DNA", "ディーエヌエー"),
+        ("ATM", "エーティーエム"),
+    ],
 )
-def test_acronym_letter_by_letter_fallback():
-    assert transliterate("FBI", "ja") == "エフビーアイ"
+def test_acronym_letter_by_letter_fallback(acro, expected):
+    """Activated only when alkana misses AND the input is 2+ uppercase
+    ASCII letters."""
+    assert transliterate(acro, "ja") == expected
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Punctuation in en input (Mr., Jr., O'Brien) breaks alkana lookup. "
-    "Could split-and-strip before lookup — minor effort, deferred.",
-)
-def test_en_with_title_prefix():
+def test_acronym_known_to_alkana_uses_alkana():
+    """NASA and IBM are in alkana's dict; we use that, not letter-by-letter."""
+    assert transliterate("NASA", "ja") == "ナサ"
+    assert transliterate("IBM", "ja") == "アイビーエム"
+
+
+def test_single_letter_does_not_trigger_acronym_fallback():
+    """Single uppercase letters are too ambiguous (pronoun? abbreviation?)
+    — fail soft rather than guess."""
+    assert transliterate("A", "ja") is None
+    assert transliterate("I", "ja") is None
+
+
+# === en input punctuation handling ========================================
+
+def test_title_prefix_with_period():
     assert transliterate("Mr. Smith", "ja") == "ミスター・スミス"
+
+
+def test_doctor_prefix():
+    assert transliterate("Dr. House", "ja") == "ドクター・ハウス"
+
+
+def test_hyphenated_name():
+    """Mary-Jane splits on hyphen, looks up each piece, joins with ・."""
+    assert transliterate("Mary-Jane", "ja") == "メアリー・ジェイン"
+
+
+def test_hyphenated_name_with_unknown_piece():
+    """Unknown hyphen-separated piece causes whole-input None (fail-soft)."""
+    assert transliterate("Mary-Joaquin", "ja") is None
+
+
+def test_acronym_within_multi_word():
+    """An acronym inside a sentence-like input still goes through the
+    per-word pipeline."""
+    assert transliterate("FBI Smith", "ja") == "エフビーアイ・スミス"
+
+
+# === Future considerations (xfail = parked, not abandoned) =================
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Name-order option not implemented. Current behavior emits "
+    "family-first (山田太郎 → 'Yamada Taro'), matching modern Japanese "
+    "government convention (formally adopted 2019). Some Western contexts "
+    "expect given-first ('Taro Yamada'). Future: add an order='family-first'|"
+    "'given-first' parameter or a target_lang variant.",
+)
+def test_given_first_order_option():
+    # Hypothetical API once added — this test pins the desired output.
+    assert transliterate("山田太郎", "en", source_lang="ja") == "Taro Yamada"

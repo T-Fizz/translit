@@ -76,11 +76,11 @@ No network, no auth, 2.6μs per warm call.
 
 ### 1. Python 3.12 for the venv (not 3.14)
 Homebrew's 3.14 ships with a broken `ensurepip`. Switched the venv to 3.12 for
-local dev; [Dockerfile](Dockerfile) pins `python:3.12-slim`. No other code
+local dev; [Dockerfile](../Dockerfile) pins `python:3.12-slim`. No other code
 impact — all deps resolve identically.
 
 ### 2. Compound-honorific bug: fixed + ruleset expanded
-[app/transliterate.py:114-128](app/transliterate.py#L114-L128) — the old guard
+[app/transliterate.py:114-128](../app/transliterate.py#L114-L128) — the old guard
 `len(stem) > len(suffix)` mis-rejected the exact-match case, so `兄ちゃん` fell
 through to bare `ちゃん` + pykakasi reading of `兄` → `Ani-chan`. New behavior:
 exact match emits the dict roman form directly (`Niichan`). Extended
@@ -101,14 +101,14 @@ starlette buffers).
 
 ### 5. Method label derived from resolved source
 Instead of re-reading a registry on every lookup, `_method_for()` in
-[app/routes.py:29-34](app/routes.py#L29-L34) has a hardcoded `ja → pykakasi`,
+[app/routes.py:29-34](../app/routes.py#L29-L34) has a hardcoded `ja → pykakasi`,
 `zh → pypinyin` map. If `supported_pairs()` grows, this map must grow too —
 added a comment there. Not DRY'd because the registry shape in
 `supported_pairs()` encodes display strings like `"pykakasi+hepburn+honorifics"`
 which don't match the terse `method` field in the response. Split by intent.
 
 ### 6. No usage_log writes yet
-Schema is created in [migrations/001_init.sql](migrations/001_init.sql) but
+Schema is created in [migrations/001_init.sql](../migrations/001_init.sql) but
 nothing writes to it. [DESIGN.md](DESIGN.md) says async upsert every N seconds;
 that's a bg task I didn't build this session. SLA.md describes daily aggregates
 — we can add a periodic flush in v1.1 without breaking the contract.
@@ -156,10 +156,10 @@ boundary detector is the only way — it's not attempted. Test
    verification. Verify before prod: point `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`
    at a real instance, run migrations, POST a known name twice, confirm second
    call has `"cached": true`. If the supabase-py signatures have drifted from
-   what I wrote in [app/cache.py:81-122](app/cache.py#L81-L122), update there.
+   what I wrote in [app/cache.py:81-122](../app/cache.py#L81-L122), update there.
 
-2. **No Fly account access → no deploy verification.** [Dockerfile](Dockerfile)
-   and [fly.toml](fly.toml) are written but never actually `fly deploy`'d.
+2. **No Fly account access → no deploy verification.** [Dockerfile](../Dockerfile)
+   and [fly.toml](../fly.toml) are written but never actually `fly deploy`'d.
    One thing worth checking on first deploy: dict-warming `RUN` step in the
    Dockerfile adds ~5-15s to build time. If that's unacceptable, delete those
    two lines and accept the cold-start penalty on boot instead.

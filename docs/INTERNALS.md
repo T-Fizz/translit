@@ -35,7 +35,7 @@ If the libraries already exist, **what does this project add?** Five things:
 
 1. **Honorific detection.** `pykakasi` gives `カナちゃん → "kanachan"`. We
    want `Kana-chan`. The 22-entry honorific table lives in
-   [translit_core/engine.py](translit_core/engine.py); we strip a known
+   [translit_core/engine.py](../translit_core/engine.py); we strip a known
    trailing honorific before romanization, then re-attach the roman form
    with a hyphen.
 2. **CJK source disambiguation.** `田中` is valid Chinese ("Tian Zhong") and
@@ -150,7 +150,7 @@ Splitting unsegmented kana would need a separate word-boundary detector
 (MeCab, Janome, or a name dictionary), and we didn't ship one.
 
 Tracked as a known limit in
-[`test_mid_string_long_vowel_folded_in_single_token`](tests/test_ja_romanization.py).
+[`test_mid_string_long_vowel_folded_in_single_token`](../tests/test_ja_romanization.py).
 
 **Where it breaks more silently: rare kanji variants.** Some names use
 visually similar but encoded-distinct characters that pykakasi's dictionary
@@ -244,38 +244,70 @@ Without a fix, this leaks as `Tanaka Tanaka Hiroshi`. The same input-strip
 that handles punctuation handles this too: stripping `\n`, `\t`, and emoji
 before pykakasi sees the input means pykakasi never gets confused.
 
-### Round-trip katakana names (`ヴィクター → ?`)
+### Round-trip katakana names (`ヴィクター → "Victor"`)
 
-`ヴィクター` is the Japanese transliteration of "Victor". Going back the
-other way, you'd want `Victor`. What we produce is `Buikutaa` — the literal
-romanization of the kana symbols, treating `ヴィ` as `bui` and `クター` as
-`kutaa`.
+`ヴィクター` is the Japanese transliteration of "Victor". The naive path —
+running it through pykakasi — gives `Buikutaa` because pykakasi treats `ヴィ`
+as `bui` and `クター` as `kutaa`. To recover `Victor`, we invert `alkana`'s
+~49k-entry dictionary on first use to build a *reverse-alkana* map (katakana →
+English). When the engine sees all-katakana input, it tries the reverse map
+*before* pykakasi:
 
-This is fundamentally a **lost-information** problem. The kana representation
-of "Victor" smudges English phonemes through Japanese phonotactics; the path
-back requires knowing it was originally a Western name and reaching into a
-Western-name dictionary. We can't reconstruct that from the kana alone.
+```python
+if _is_all_katakana(stem):
+    western = _katakana_to_western(stem)
+    if western is not None:
+        return western + honorific_roman
+```
 
-`xfail`'d as `test_katakana_western_name_round_trip`. Solving it would mean
-shipping a reverse loanword dictionary — substantial work for a niche case.
+Multi-word katakana names split on `・` and look up each piece independently
+(`ジョン・スミス → "John Smith"`). Honorifics are stripped first, so
+`ヴィクターさん → "Victor-san"`. Japanese-origin names like `タナカ`, `サクラ`,
+`ナルト` aren't in alkana's dictionary, so they fall through to pykakasi
+cleanly — no false positives.
 
-### Acronyms (`FBI → ?`)
+### Acronyms (`FBI → "エフビーアイ"`)
 
 `alkana` knows some acronyms (`NASA → ナサ`, `IBM → アイビーエム`) but misses
-others (`FBI`, `USA`, `CEO`, `AI`). Real Japanese reads English acronyms
-letter-by-letter: `FBI → エフビーアイ` (eff-bii-ai). A 26-entry A–Z mapping
-table plus an "is this all-caps?" check would close the gap.
+many (`FBI`, `USA`, `CEO`, `AI`, `UK`, `EU`, `DNA`, `ATM`). Real Japanese
+reads English acronyms letter-by-letter: `FBI → エフビーアイ` (eff-bii-ai). A
+26-entry A–Z mapping table closes the gap. Activation rule: only when alkana
+has missed *and* the input is 2+ uppercase ASCII letters.
 
-Tracked in `test_acronym_letter_by_letter_fallback`. v1.1 candidate.
+```python
+"a": "エー", "b": "ビー", "c": "シー", ...
+"f": "エフ", "g": "ジー", "h": "エイチ", "i": "アイ", ...
+```
 
-### Names with punctuation (`O'Brien`, `Mary-Jane`, `Mr. Smith`)
+Single uppercase letters (`A`, `I`) deliberately *don't* trigger the fallback
+— they're too ambiguous (pronoun? abbreviation?). The engine refuses rather
+than guessing.
 
-`alkana` rejects anything with apostrophes, hyphens, or trailing periods —
-its dictionary is ASCII-letter-only. We don't preprocess these out, so
-`Mr. Smith` returns `None`. A split-and-strip pass before lookup would help
-(`"Mr." → "Mr"`, then `Mr → ミスター`, then join).
+### Names with punctuation (`Mr. Smith`, `Mary-Jane`)
 
-Tracked in `test_en_with_title_prefix`.
+The en → ja path now does progressive cleanup per word:
+
+1. Try alkana with the word as-is.
+2. Strip trailing `.,;:!?` and try again (`"Mr." → "Mr" → ミスター`).
+3. Try the acronym fallback if the cleaned word is 2+ uppercase letters.
+
+Hyphenated names get split on the hyphen first (`Mary-Jane → ["Mary", "Jane"]`)
+so each piece can look up independently. The result still joins with `・`:
+`Mary-Jane → メアリー・ジェイン`.
+
+Still misses: names with leading apostrophes (`O'Brien`, `D'Angelo`) — alkana
+doesn't carry those forms, and we don't strip the apostrophe because that
+would break `O'Brien` ≠ `Brien`. A name-prefix dictionary (`O'`, `Mc`, `de`)
+would help; deferred.
+
+### Family-name-first vs given-name-first (parked)
+
+Modern Japanese government convention (formally adopted 2019) renders names
+family-first: `山田太郎 → "Yamada Taro"`. That's what we emit. Some older
+Western conventions flip to given-first (`Taro Yamada`). We don't currently
+expose an option for this — adding a `name_order` parameter or a target_lang
+variant is a clean future addition. Pinned in
+[`test_given_first_order_option`](../tests/test_edge_cases.py).
 
 ## 7. What you can rely on, what you can't
 
@@ -285,7 +317,10 @@ Tracked in `test_en_with_title_prefix`.
 - Hiragana, katakana (full-width and half-width), and CJK kanji within the
   Basic Multilingual Plane.
 - Common English first/last names and loanwords from `alkana`.
-- Multi-word English names with `・` separation.
+- Multi-word English names: whitespace + hyphen splitting, joined with `・`.
+- Round-trip katakana → Western name (`ヴィクター → "Victor"`).
+- English acronyms 2+ letters (`FBI → エフビーアイ` via A–Z fallback).
+- Title prefixes with trailing periods (`Mr. Smith → ミスター・スミス`).
 
 **Unreliable / refused:**
 - Pure-kana compound names won't be word-split (`さとうひろし` stays one word).
@@ -293,10 +328,9 @@ Tracked in `test_en_with_title_prefix`.
   dropouts).
 - Rare kanji variants (`髙`, `齋`) usually return `None`; pykakasi can't
   read them.
-- Round-trip romanization of katakana loanword names doesn't recover the
-  original spelling.
-- English acronyms hit/miss based on `alkana`'s dictionary.
-- English names with punctuation (`O'Brien`, `Mary-Jane`) miss.
+- English names with leading apostrophes (`O'Brien`, `D'Angelo`) miss.
+- Single uppercase letters (`A`, `I`) — too ambiguous, refused.
+- Family-name-first is the only output order (no given-first option yet).
 
 **Out of scope by design:**
 - Non-name text (sentences, paragraphs).
@@ -327,16 +361,16 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 
 | Concern | File / function |
 |---|---|
-| Script detection | [`translit_core/engine.py:detect_source_script`](translit_core/engine.py) |
-| Honorific dictionary | [`translit_core/engine.py:_JA_HONORIFICS_RAW`](translit_core/engine.py) |
-| Honorific stripping | [`translit_core/engine.py:_ja_to_romaji`](translit_core/engine.py) (top half) |
-| pykakasi → romaji | [`translit_core/engine.py:_ja_to_romaji`](translit_core/engine.py) (bottom half) |
-| zh → pinyin | [`translit_core/engine.py:_zh_to_pinyin`](translit_core/engine.py) |
-| en → katakana | [`translit_core/engine.py:_en_to_katakana`](translit_core/engine.py) |
-| Coverage / silent-dropout check | [`translit_core/engine.py`](translit_core/engine.py) (search for `input_alpha`) |
-| Edge-case regression tests | [`tests/test_edge_cases.py`](tests/test_edge_cases.py) |
-| Honorific tests | [`tests/test_ja_honorifics.py`](tests/test_ja_honorifics.py) |
-| Romanization tests | [`tests/test_ja_romanization.py`](tests/test_ja_romanization.py) |
+| Script detection | [`translit_core/engine.py:detect_source_script`](../translit_core/engine.py) |
+| Honorific dictionary | [`translit_core/engine.py:_JA_HONORIFICS_RAW`](../translit_core/engine.py) |
+| Honorific stripping | [`translit_core/engine.py:_ja_to_romaji`](../translit_core/engine.py) (top half) |
+| pykakasi → romaji | [`translit_core/engine.py:_ja_to_romaji`](../translit_core/engine.py) (bottom half) |
+| zh → pinyin | [`translit_core/engine.py:_zh_to_pinyin`](../translit_core/engine.py) |
+| en → katakana | [`translit_core/engine.py:_en_to_katakana`](../translit_core/engine.py) |
+| Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
+| Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |
+| Honorific tests | [`tests/test_ja_honorifics.py`](../tests/test_ja_honorifics.py) |
+| Romanization tests | [`tests/test_ja_romanization.py`](../tests/test_ja_romanization.py) |
 
 Total core engine: ~200 lines. The rest of the repo is the optional FastAPI
 service, deployment scaffolding, and the test suite.
