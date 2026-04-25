@@ -1,22 +1,21 @@
 package:
     name: translit
     version: 0.1.0
-    runtime: python
 phases:
     build:
-        description: Syntax-check Python sources
+        # Syntax-check Python sources
         commands:
             - 'find app -name "*.py" -exec python -m py_compile {} +'
     test:
-        description: Run pytest suite
+        # Run pytest suite
         commands:
             - 'pip install -q -r requirements.txt'
             - 'python -m pytest -x -q'
     dev:
-        description: Run local FastAPI dev server on port 8001
+        # Run local FastAPI dev server on port 8001
         commands:
             - 'uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload'
     deploy:
-        description: Deploy translit service to Fly.io
+        # Deploy translit service to Fly.io
         commands:
             - 'fly deploy --app translit'

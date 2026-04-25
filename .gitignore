@@ -20,4 +20,8 @@ __pycache__/
 # Logs
 *.log
 
+# Takumi runtime state (config files like .takumi/TAKUMI.md remain tracked)
+.takumi/cache/
+.takumi/metrics.json
+
 # Fly.io (fly.toml is tracked intentionally)
