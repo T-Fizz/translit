@@ -267,16 +267,59 @@ def test_acronym_within_multi_word():
     assert transliterate("FBI Smith", "ja") == "エフビーアイ・スミス"
 
 
-# === Future considerations (xfail = parked, not abandoned) =================
+# === Name order (family-first vs given-first) ============================
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Name-order option not implemented. Current behavior emits "
-    "family-first (山田太郎 → 'Yamada Taro'), matching modern Japanese "
-    "government convention (formally adopted 2019). Some Western contexts "
-    "expect given-first ('Taro Yamada'). Future: add an order='family-first'|"
-    "'given-first' parameter or a target_lang variant.",
+def test_default_is_family_first():
+    """Modern Japanese government convention (adopted 2019) is family-first."""
+    assert transliterate("山田太郎", "en", source_lang="ja") == "Yamada Taro"
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("山田太郎", "Taro Yamada"),
+        ("中村花子", "Hanako Nakamura"),
+        ("佐藤一郎", "Ichiro Sato"),
+    ],
 )
-def test_given_first_order_option():
-    # Hypothetical API once added — this test pins the desired output.
-    assert transliterate("山田太郎", "en", source_lang="ja") == "Taro Yamada"
+def test_given_first_order(name, expected):
+    """name_order='given-first' swaps the two pykakasi tokens (older
+    Western-facing convention)."""
+    assert (
+        transliterate(name, "en", source_lang="ja", name_order="given-first")
+        == expected
+    )
+
+
+def test_given_first_preserves_honorific_at_end():
+    """Honorific attaches to the new last name after the swap."""
+    assert (
+        transliterate(
+            "山田太郎さん", "en", source_lang="ja", name_order="given-first"
+        )
+        == "Taro Yamada-san"
+    )
+
+
+@pytest.mark.parametrize("name", ["田中", "たなか", "タナカ"])
+def test_single_token_no_swap(name):
+    """Names that pykakasi keeps as a single token can't be swapped — no
+    family/given boundary exists. Engine emits unchanged regardless of order."""
+    assert (
+        transliterate(name, "en", source_lang="ja", name_order="given-first")
+        == transliterate(name, "en", source_lang="ja", name_order="family-first")
+    )
+
+
+def test_unknown_name_order_value_falls_back_to_family_first():
+    """Defensive: typo'd name_order value behaves like the default."""
+    assert (
+        transliterate("山田太郎", "en", source_lang="ja", name_order="garbage")
+        == "Yamada Taro"
+    )
+
+
+def test_given_first_does_not_affect_western_round_trip():
+    """ヴィクター (round-trip path) emits 'Victor' regardless of order — Western
+    names rendered in Japanese were already given-first, no re-swap needed."""
+    assert transliterate("ヴィクター", "en", name_order="given-first") == "Victor"

@@ -300,14 +300,28 @@ doesn't carry those forms, and we don't strip the apostrophe because that
 would break `O'Brien` ≠ `Brien`. A name-prefix dictionary (`O'`, `Mc`, `de`)
 would help; deferred.
 
-### Family-name-first vs given-name-first (parked)
+### Family-name-first vs given-name-first (`name_order`)
 
 Modern Japanese government convention (formally adopted 2019) renders names
-family-first: `山田太郎 → "Yamada Taro"`. That's what we emit. Some older
-Western conventions flip to given-first (`Taro Yamada`). We don't currently
-expose an option for this — adding a `name_order` parameter or a target_lang
-variant is a clean future addition. Pinned in
-[`test_given_first_order_option`](../tests/test_edge_cases.py).
+family-first: `山田太郎 → "Yamada Taro"`. That's the default. Older
+Western-facing conventions often flip to given-first (`Taro Yamada`). The
+`name_order` parameter on `transliterate()` exposes this:
+
+```python
+transliterate("山田太郎", "en", source_lang="ja")                            # "Yamada Taro"
+transliterate("山田太郎", "en", source_lang="ja", name_order="given-first")  # "Taro Yamada"
+```
+
+The swap only fires when pykakasi tokenizes the input into exactly two parts.
+Single-token output — single kanji blocks like `田中`, kana names like `たなか`,
+or `タナカ` (where pykakasi can't find a morpheme boundary) — emits unchanged
+regardless of `name_order`. Honorifics still attach to the end after the
+swap (`山田太郎さん → "Taro Yamada-san"`). Round-trip katakana names
+(`ヴィクター → "Victor"`) ignore `name_order` because Western names rendered
+in Japanese are already given-first by convention.
+
+Chinese pinyin output (`王明 → "Wang Ming"`) also follows family-first; a
+similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
 ## 7. What you can rely on, what you can't
 
@@ -330,7 +344,8 @@ variant is a clean future addition. Pinned in
   read them.
 - English names with leading apostrophes (`O'Brien`, `D'Angelo`) miss.
 - Single uppercase letters (`A`, `I`) — too ambiguous, refused.
-- Family-name-first is the only output order (no given-first option yet).
+- Single-token Japanese names can't be re-ordered to given-first — no
+  family/given boundary exists in the output to swap.
 
 **Out of scope by design:**
 - Non-name text (sentences, paragraphs).

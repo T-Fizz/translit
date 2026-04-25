@@ -218,7 +218,11 @@ def _alkana_lookup(word: str) -> str | None:
 
 # --- romanizers -------------------------------------------------------------
 
-def _ja_to_romaji(name: str, caller_hinted_ja: bool = False) -> str | None:
+def _ja_to_romaji(
+    name: str,
+    caller_hinted_ja: bool = False,
+    name_order: str = "family-first",
+) -> str | None:
     try:
         import pykakasi
     except ImportError:
@@ -300,6 +304,13 @@ def _ja_to_romaji(name: str, caller_hinted_ja: bool = False) -> str | None:
         tokens.append(t)
     if not tokens:
         return None
+    # Family-first is the modern Japanese government convention (formally
+    # adopted 2019) and our default. Older Western-facing contexts often
+    # expect given-first; swap when there's a clean 2-token boundary
+    # (山田太郎 → [yamada, taro] → "Taro Yamada"). Names pykakasi can't
+    # tokenize (single-token kana, single kanji block) can't be swapped.
+    if name_order == "given-first" and len(tokens) == 2:
+        tokens = [tokens[1], tokens[0]]
     return " ".join(t.capitalize() for t in tokens) + honorific_roman
 
 
@@ -339,10 +350,22 @@ def _en_to_katakana(name: str) -> str | None:
 
 # --- public API -------------------------------------------------------------
 
-def transliterate(name: str, target_lang: str, source_lang: str | None = None) -> str | None:
+def transliterate(
+    name: str,
+    target_lang: str,
+    source_lang: str | None = None,
+    name_order: str = "family-first",
+) -> str | None:
     """Return a transliteration of `name` in the native script of `target_lang`.
 
     `source_lang` disambiguates pure-kanji names (田中 → Tanaka if ja, Tian Zhong if zh).
+
+    `name_order` controls family/given output for Japanese names:
+      - "family-first" (default): 山田太郎 → "Yamada Taro" (modern JA convention)
+      - "given-first":             山田太郎 → "Taro Yamada" (older Western-facing)
+    Only takes effect when pykakasi tokenizes the name into exactly two parts;
+    single-token output (single kanji block, pure kana names) emits unchanged.
+
     Returns None when the pair isn't supported deterministically.
     """
     if not name:
@@ -367,7 +390,11 @@ def transliterate(name: str, target_lang: str, source_lang: str | None = None) -
     if target_lang not in _LATIN_TARGETS:
         return None
     if src == "ja":
-        return _ja_to_romaji(name, caller_hinted_ja=(source_lang == "ja"))
+        return _ja_to_romaji(
+            name,
+            caller_hinted_ja=(source_lang == "ja"),
+            name_order=name_order,
+        )
     if src == "zh":
         return _zh_to_pinyin(name)
     return None
