@@ -1,0 +1,10 @@
+workspace:
+    name: translit
+    ignore:
+        - vendor/
+        - node_modules/
+        - .git/
+    settings:
+        parallel: true
+    ai:
+        agent: claude

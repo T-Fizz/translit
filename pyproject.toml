@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "translit-core"
+version = "0.1.0"
+description = "Deterministic name-aware transliteration (ja/zh → latin)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "tfitz" }]
+keywords = ["transliteration", "romaji", "pinyin", "japanese", "chinese", "names"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "pykakasi>=2.0,<3",
+    "pypinyin>=0.50,<1",
+]
+
+[project.optional-dependencies]
+service = [
+    "fastapi>=0.115,<0.116",
+    "uvicorn[standard]>=0.34,<0.35",
+    "pydantic>=2.11,<3",
+    "python-dotenv>=1.1,<2",
+    "httpx>=0.28,<1",
+    "supabase>=2.13,<3",
+]
+test = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.setuptools]
+packages = ["translit_core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = [
+    "ja: Japanese-script transliteration",
+    "honorifics: Japanese honorific handling",
+    "script_detection: source-script detection",
+]

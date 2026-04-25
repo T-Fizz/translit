@@ -81,8 +81,10 @@ _JA_HONORIFICS_RAW = [
     ("どの", "-dono"),       ("殿", "-dono"),
 
     # Family compounds — must out-rank bare さん/さま (longest-first sort does this)
-    ("にいさん", "-niisan"), ("兄さん", "-niisan"), ("兄ちゃん", "-niichan"),
-    ("ねえさん", "-neesan"), ("姉さん", "-neesan"), ("姉ちゃん", "-neechan"),
+    ("にいさん", "-niisan"), ("兄さん", "-niisan"),
+    ("にいちゃん", "-niichan"), ("兄ちゃん", "-niichan"),
+    ("ねえさん", "-neesan"), ("姉さん", "-neesan"),
+    ("ねえちゃん", "-neechan"), ("姉ちゃん", "-neechan"),
 
     # Slang / moe
     ("っち", "-cchi"), ("にゃん", "-nyan"), ("ぴょん", "-pyon"),
@@ -113,23 +115,38 @@ def _ja_to_romaji(name: str) -> str | None:
     tail_hira = _katakana_to_hiragana(name)
     for suffix, roman in _JA_HONORIFICS:
         sfx_hira = _katakana_to_hiragana(suffix)
-        if tail_hira.endswith(sfx_hira) and len(stem) > len(suffix):
+        if not tail_hira.endswith(sfx_hira):
+            continue
+        if len(stem) == len(suffix):
+            # Whole input is the honorific/compound term — use its roman form
+            # directly (no stem, no leading hyphen).
+            return roman.lstrip("-").capitalize()
+        if len(stem) > len(suffix):
             stem = stem[:-len(suffix)]
             honorific_roman = roman
             break
 
+    # 'passport' is pykakasi's simplified-Hepburn field, modeled on the
+    # romanization Japanese passports use. It handles most mid-word long
+    # vowels (satou→sato, oumei→omei) but inconsistently on yōon and
+    # geminated forms (shou/ryou/shuu/yuu/gakkou stay un-folded). We layer
+    # an end-of-token fold on top so those cases round out to simplified.
+    # Tokens are joined with spaces so multi-kanji names split at
+    # pykakasi's morpheme boundaries (山田太郎 → "Yamada Taro").
     k = pykakasi.kakasi()
-    parts = k.convert(stem)
-    raw = "".join(p["hepburn"] for p in parts).strip()
-    if not raw:
+    tokens: list[str] = []
+    for p in k.convert(stem):
+        t = p["passport"]
+        if not t.strip():
+            continue
+        if t.endswith("ou"):
+            t = t[:-2] + "o"
+        elif t.endswith("uu"):
+            t = t[:-2] + "u"
+        tokens.append(t)
+    if not tokens:
         return None
-    # Wapuro 'ou'/'uu' at word end → single vowel (Satou → Sato).
-    if raw.endswith("ou"):
-        raw = raw[:-2] + "o"
-    elif raw.endswith("uu"):
-        raw = raw[:-2] + "u"
-    result = " ".join(c.capitalize() for c in raw.split()) if " " in raw else raw.capitalize()
-    return result + honorific_roman
+    return " ".join(t.capitalize() for t in tokens) + honorific_roman
 
 
 def _zh_to_pinyin(name: str) -> str | None:

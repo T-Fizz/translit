@@ -1,0 +1,39 @@
+# Fly.io config — sjc single-region v1 per DESIGN.md §Deployment.
+# Secrets (SUPABASE_URL, SUPABASE_SERVICE_KEY, BOOTSTRAP_API_KEYS) set via
+# `fly secrets set` — never committed here.
+
+app = "translit"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LOG_LEVEL = "INFO"
+  MEMO_MAX_ENTRIES = "50000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/v1/health"
+    protocol = "http"
+    timeout = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

@@ -54,4 +54,4 @@ fly deploy
 
 ## License
 
-TBD.
+MIT — see [LICENSE](LICENSE).
