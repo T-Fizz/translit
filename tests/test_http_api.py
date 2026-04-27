@@ -116,9 +116,10 @@ def test_honorific_stripped_and_appended(client, auth_headers):
 
 
 def test_unsupported_source_returns_200_with_reason(client, auth_headers):
+    """Arabic isn't supported in v1 — engine detects 'ar' but routes nowhere."""
     r = client.post(
         "/v1/transliterate",
-        json={"name": "김민수", "target_lang": "en"},
+        json={"name": "محمد", "target_lang": "en"},
         headers=auth_headers,
     )
     assert r.status_code == 200
@@ -126,7 +127,7 @@ def test_unsupported_source_returns_200_with_reason(client, auth_headers):
     assert body["phonetic"] is None
     assert body["method"] is None
     assert body["reason"] == "unsupported_pair"
-    assert body["source_lang"] == "ko"
+    assert body["source_lang"] == "ar"
 
 
 def test_unsupported_target_is_200_with_reason(client, auth_headers):
@@ -254,7 +255,7 @@ def test_batch_mixed_supported_and_unsupported(client, auth_headers):
         json={
             "entries": [
                 {"name": "たなか", "target_lang": "en"},
-                {"name": "김민수", "target_lang": "en"},
+                {"name": "محمد", "target_lang": "en"},
             ]
         },
         headers=auth_headers,

@@ -29,6 +29,7 @@ curl -X POST https://translit.example.com/v1/transliterate \
 |---|---|---|
 | Japanese (kana + kanji) | Latin | `pykakasi` (passport-style Hepburn) + honorific dictionary |
 | Chinese (Hanzi) | Latin | `pypinyin` (no tone marks) |
+| Korean (Hangul) | Latin | Revised Romanization (per-syllable, in-repo) + traditional surname overlay (Kim/Lee/Park/...) |
 | English (Latin)         | Japanese (katakana) | `alkana` dictionary; multi-word names join with `・` |
 
 See [docs/DESIGN.md → Roadmap](docs/DESIGN.md) for what's coming.

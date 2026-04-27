@@ -23,13 +23,16 @@ would be translation, and you'd use a different tool.
 
 ## 2. The 100-line wrapper
 
-The actual phonetic conversion is done by two well-maintained Python libs:
+The actual phonetic conversion is done by Python libraries (where they
+exist with the right semantics) and a few small in-repo tables (where a
+library would have been a bad fit):
 
-| Source | Library | What it does |
+| Source | Provider | What it does |
 |---|---|---|
 | Japanese | [`pykakasi`](https://codeberg.org/miurahr/pykakasi) | kana/kanji → romaji |
 | Chinese | [`pypinyin`](https://github.com/mozillazg/python-pinyin) | hanzi → pinyin |
 | English | [`alkana`](https://github.com/cod-sushi/alkana.py) | English → katakana |
+| Korean | in-repo: Hangul codepoint decomposition + RR table | Hangul → roman |
 
 If the libraries already exist, **what does this project add?** Five things:
 
@@ -181,7 +184,66 @@ if not input_alpha.issubset(covered_alpha):
 If `𠮷` was in the input but not in any `orig`, we refuse rather than emit
 a misleading partial reading.
 
-## 6. The edge-case bestiary
+## 6. Korean: traditional overlay layered on Revised Romanization
+
+Korean is the one language pair where we don't depend on an external
+library — `hangul-romanize` exists but its `REVISED_*` tables don't match
+what RR actually says (initial ㄹ as `'l'` instead of `'r'`, finals as the
+underlying lenis form `'g'` instead of pause-form `'k'`). Easier and more
+correct to implement RR ourselves: ~30 lines via Hangul codepoint
+decomposition.
+
+Each Hangul syllable block (U+AC00–U+D7A3) decomposes deterministically:
+
+```
+syllable_index = (initial_index * 21 + medial_index) * 28 + final_index
+```
+
+So we look up each component in three small tables (19 initials, 21 vowels,
+28 finals) and concatenate. Per-syllable feeding keeps each block atomic —
+no sandhi rules to worry about, suitable for hyphen-joined names like
+`Jeong-eun` where each piece stands alone.
+
+**The traditional overlay.** Pure RR would render `김 → "Gim"`, `이 → "I"`,
+`박 → "Bak"`, `최 → "Choe"`. You'd never see those spellings in real life.
+Korean newspapers, passports, and business cards universally use the
+*traditional* spellings: Kim / Lee / Park / Choi / Jung / Yoon / Cho.
+We ship a 36-entry surname overlay covering ~85% of the population's
+family names. Unknown surnames fall back to RR.
+
+```python
+_KO_SURNAME_OVERLAY = {
+    "김": "Kim", "이": "Lee", "박": "Park", "최": "Choi",
+    "정": "Jung", "강": "Kang", "조": "Cho", "윤": "Yoon",
+    # ... 30+ more, including 2-syllable family names like 남궁/황보
+}
+```
+
+**Family-name boundary.** Korean family names are almost always 1 syllable
+(99% of the population). A handful of 2-syllable family names exist
+(남궁/Namgoong, 황보/Hwangbo, 사공/Sagong, 제갈/Jegal, 선우/Sunwoo, 독고/Dokgo);
+those are tracked as keys in the overlay, and the engine prefers a
+2-syllable family match over a 1-syllable one when the head matches.
+
+**Press-style capitalization.** Korean given names appear with the second
+syllable lowercase in news writing (`Lee Min-ho`, `Kim Jong-un`,
+`Park Geun-hye`). We capitalize only the first syllable of the given name
+and join with hyphens; the family name's casing comes straight from the
+overlay (or a `Title()`'d RR fallback).
+
+**Same `name_order` flag.** Family-first is the default; `given-first`
+swaps to `Geun-hye Park` etc. The flag works the same way as for Japanese.
+
+**Out of scope (for now):**
+- Korean honorifics (씨/-ssi, 님/-nim, 선생님/-seonsaengnim) — not as
+  pervasive on rendered names as JA honorifics; could add a small dict.
+- North Korean transliteration conventions (which differ slightly from
+  South Korean RR).
+- Per-person spelling overrides (`이수만 → "Lee Soo-man"` vs RR
+  `"Lee Su-man"`). RR is the deterministic baseline; press alternatives
+  vary by individual and aren't recoverable from the Hangul alone.
+
+## 7. The edge-case bestiary
 
 Things we ran into during testing, and how each is handled.
 
@@ -323,13 +385,16 @@ in Japanese are already given-first by convention.
 Chinese pinyin output (`王明 → "Wang Ming"`) also follows family-first; a
 similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
-## 7. What you can rely on, what you can't
+## 8. What you can rely on, what you can't
 
 **Reliable:**
 - Common Japanese names (`pykakasi` covers the top several thousand).
 - Japanese honorifics from the dictionary (22 entries, longest-match-wins).
 - Hiragana, katakana (full-width and half-width), and CJK kanji within the
   Basic Multilingual Plane.
+- Common Korean names with traditional surname spellings (Kim/Lee/Park/etc.,
+  ~36 surnames covering ~85% of the population).
+- Korean given names via Revised Romanization, press-style (`Kim Jong-un`).
 - Common English first/last names and loanwords from `alkana`.
 - Multi-word English names: whitespace + hyphen splitting, joined with `・`.
 - Round-trip katakana → Western name (`ヴィクター → "Victor"`).
@@ -342,6 +407,10 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
   dropouts).
 - Rare kanji variants (`髙`, `齋`) usually return `None`; pykakasi can't
   read them.
+- Korean surnames outside the overlay fall back to RR (`나 → "Na"` rather
+  than the personal-choice spelling that surname-holder might use).
+- Per-person Korean spelling choices (`이수만 → "Lee Soo-man"` vs RR
+  `"Lee Su-man"`) — not recoverable from Hangul alone.
 - English names with leading apostrophes (`O'Brien`, `D'Angelo`) miss.
 - Single uppercase letters (`A`, `I`) — too ambiguous, refused.
 - Single-token Japanese names can't be re-ordered to given-first — no
@@ -349,10 +418,10 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
 **Out of scope by design:**
 - Non-name text (sentences, paragraphs).
-- Languages other than ja/zh/en (yet).
 - Translation (use Azure or DeepL).
+- Languages other than ja/zh/ko/en for now.
 
-## 8. Why a service at all (over just `pip install pykakasi`)
+## 9. Why a service at all (over just `pip install pykakasi`)
 
 If your consumer is Python and you only need ja → en, **just install
 `pykakasi` directly.** A warm `pykakasi.kakasi().convert()` call is ~3μs;
@@ -372,7 +441,7 @@ The HTTP service in `app/` adds value over `translit_core` only when:
 
 Otherwise: `pip install -e /path/to/translit` and call the library directly.
 
-## 9. Where to look in the code
+## 10. Where to look in the code
 
 | Concern | File / function |
 |---|---|
@@ -382,6 +451,8 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 | pykakasi → romaji | [`translit_core/engine.py:_ja_to_romaji`](../translit_core/engine.py) (bottom half) |
 | zh → pinyin | [`translit_core/engine.py:_zh_to_pinyin`](../translit_core/engine.py) |
 | en → katakana | [`translit_core/engine.py:_en_to_katakana`](../translit_core/engine.py) |
+| ko → roman + surname overlay | [`translit_core/engine.py:_ko_to_roman`](../translit_core/engine.py) |
+| Korean RR per-syllable table | [`translit_core/engine.py:_RR_INITIALS`](../translit_core/engine.py) |
 | Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
 | Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |
 | Honorific tests | [`tests/test_ja_honorifics.py`](../tests/test_ja_honorifics.py) |

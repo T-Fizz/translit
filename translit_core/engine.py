@@ -325,6 +325,157 @@ def _zh_to_pinyin(name: str) -> str | None:
     return " ".join(w.capitalize() for w in words if w)
 
 
+# --- ko → roman (Revised Romanization + traditional surname overlay) -------
+
+_HANGUL_BASE = 0xAC00
+_HANGUL_END = 0xD7A3
+
+# 19 initials (consonants in onset position). RR initial-position values.
+# ㄹ → 'r' here even though final ㄹ → 'l'.
+_RR_INITIALS = (
+    "g", "kk", "n", "d", "tt", "r", "m", "b", "pp",
+    "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h",
+)
+
+# 21 vowels (medials).
+_RR_VOWELS = (
+    "a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae",
+    "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i",
+)
+
+# 28 finals (codas) at pause / end-of-syllable. RR official forms — stops
+# realize as their unreleased equivalents (ㄱ→k, ㅂ→p, ㄷ/ㅅ/ㅈ/ㅊ/ㅌ→t).
+# Cluster finals collapse to a single representative consonant (per RR).
+_RR_FINALS = (
+    "",   "k",  "kk", "k",  "n",  "n",  "n",  "t",  "l",  "k",
+    "m",  "p",  "l",  "l",  "p",  "l",  "m",  "p",  "p",  "t",
+    "t",  "ng", "t",  "t",  "k",  "t",  "p",  "t",
+)
+
+# Traditional Western-friendly surname spellings — what people actually
+# put on their passports and business cards. RR would say "Gim/I/Bak/Choe"
+# but every newspaper, sports broadcast, and visa form uses these forms.
+# Sources: top-30 Korean surnames by population, with their established
+# Latin spellings as documented across English-language media.
+_KO_SURNAME_OVERLAY = {
+    "김": "Kim",
+    "이": "Lee",
+    "박": "Park",
+    "최": "Choi",
+    "정": "Jung",
+    "강": "Kang",
+    "조": "Cho",
+    "윤": "Yoon",
+    "장": "Jang",
+    "임": "Lim",
+    "한": "Han",
+    "오": "Oh",
+    "서": "Seo",
+    "신": "Shin",
+    "권": "Kwon",
+    "황": "Hwang",
+    "안": "Ahn",
+    "송": "Song",
+    "전": "Jeon",
+    "홍": "Hong",
+    "유": "Yoo",
+    "고": "Ko",
+    "문": "Moon",
+    "양": "Yang",
+    "손": "Son",
+    "배": "Bae",
+    "백": "Baek",
+    "허": "Heo",
+    "남": "Nam",
+    "심": "Shim",
+    "노": "Noh",
+    "하": "Ha",
+    "주": "Joo",
+    "류": "Ryu",
+    # Common 2-syllable family names — kept as keys so we detect a
+    # 2-syllable family at the head of an input.
+    "남궁": "Namgoong",
+    "황보": "Hwangbo",
+    "사공": "Sagong",
+    "제갈": "Jegal",
+    "선우": "Sunwoo",
+    "독고": "Dokgo",
+}
+
+
+def _ko_syllable_to_roman(c: str) -> str:
+    """Romanize one Hangul syllable per Revised Romanization.
+
+    No sandhi: each syllable is treated atomically, suitable for hyphen-
+    joined names like 'Jeong-eun' where each piece stands alone.
+    """
+    code = ord(c)
+    if not (_HANGUL_BASE <= code <= _HANGUL_END):
+        return ""
+    idx = code - _HANGUL_BASE
+    initial = idx // 588
+    vowel = (idx % 588) // 28
+    final = idx % 28
+    return _RR_INITIALS[initial] + _RR_VOWELS[vowel] + _RR_FINALS[final]
+
+
+def _ko_to_roman(name: str, name_order: str = "family-first") -> str | None:
+    """Korean (Hangul) → Latin via Revised Romanization + traditional
+    surname overlay.
+
+    Pipeline:
+      1. Strip non-Hangul.
+      2. Detect family name boundary: if the first 2 syllables are a known
+         2-syllable surname (남궁, 황보, …), treat them as the family.
+         Otherwise the first 1 syllable is the family.
+      3. Family name: look up in the traditional-spelling overlay (Kim/
+         Lee/Park/…). If unknown, fall back to RR per syllable.
+      4. Given name: RR per syllable, hyphen-joined and capitalized
+         (정은 → 'Jeong-Un').
+      5. Output: 'Family Given-Name', or 'Given-Name Family' if
+         name_order='given-first'.
+    """
+    syllables = [c for c in name if _HANGUL_BASE <= ord(c) <= _HANGUL_END]
+    if not syllables:
+        return None
+
+    # Two-syllable family detection: longest-match-wins. If the first 2
+    # syllables are a known 2-syllable family name (남궁, 황보, …), treat
+    # them as the family — even if there's no given-name remainder.
+    family_len = 1
+    if len(syllables) >= 2:
+        head2 = "".join(syllables[:2])
+        if head2 in _KO_SURNAME_OVERLAY:
+            family_len = 2
+
+    family_chars = "".join(syllables[:family_len])
+    given_chars = syllables[family_len:]
+
+    # Family name: overlay first, RR fallback
+    family = _KO_SURNAME_OVERLAY.get(family_chars)
+    if family is None:
+        family_roman = "".join(_ko_syllable_to_roman(c) for c in family_chars)
+        if not family_roman:
+            return None
+        family = family_roman.capitalize()
+
+    if not given_chars:
+        return family  # single-syllable input is just the family
+
+    given_pieces = [_ko_syllable_to_roman(c) for c in given_chars]
+    if any(not p for p in given_pieces):
+        return None
+    # Press convention for Korean given names: capitalize only the first
+    # syllable, lowercase the rest (Lee Min-ho, Kim Jong-un, Park Geun-hye).
+    given = given_pieces[0].capitalize() + (
+        "-" + "-".join(given_pieces[1:]) if len(given_pieces) > 1 else ""
+    )
+
+    if name_order == "given-first":
+        return f"{given} {family}"
+    return f"{family} {given}"
+
+
 def _en_to_katakana(name: str) -> str | None:
     """English (Latin script) → katakana.
 
@@ -397,6 +548,8 @@ def transliterate(
         )
     if src == "zh":
         return _zh_to_pinyin(name)
+    if src == "ko":
+        return _ko_to_roman(name, name_order=name_order)
     return None
 
 
@@ -405,5 +558,6 @@ def supported_pairs() -> list[dict]:
     return [
         {"source": "ja", "target": "latin", "method": "pykakasi+passport+honorifics"},
         {"source": "zh", "target": "latin", "method": "pypinyin (no tones)"},
+        {"source": "ko", "target": "latin", "method": "RR+traditional-surname-overlay"},
         {"source": "en", "target": "ja", "method": "alkana"},
     ]
