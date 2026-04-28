@@ -193,6 +193,63 @@ def test_hangul_with_digits():
     assert transliterate("박지성7", "en", source_lang="ko") == "Park Ji-seong"
 
 
+# === Korean honorifics =====================================================
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("박지성씨", "Park Ji-seong-ssi"),
+        ("김민수님", "Kim Min-su-nim"),
+        ("이선생님", "Lee-seonsaengnim"),  # single-syl family + 3-syl honorific
+        ("박씨", "Park-ssi"),               # single-syl family + ssi
+        ("남궁민씨", "Namgoong Min-ssi"),    # 2-syl family
+    ],
+)
+def test_korean_honorifics(name, expected):
+    """씨/님/선생님 strip from the end and re-attach as -ssi/-nim/-seonsaengnim."""
+    assert transliterate(name, "en", source_lang="ko") == expected
+
+
+def test_compound_honorific_outranks_simple():
+    """선생님 (3 chars) must match before 님 (1 char) — longest-suffix-wins."""
+    out = transliterate("이선생님", "en", source_lang="ko")
+    assert out.endswith("-seonsaengnim")
+    assert "Lee" in out
+
+
+def test_bare_honorific_not_stripped():
+    """씨 alone (no name to attach to) doesn't strip — falls through to RR."""
+    assert transliterate("씨", "en", source_lang="ko") == "Ssi"
+    assert transliterate("님", "en", source_lang="ko") == "Nim"
+
+
+# === Hanja form of Korean names is out of scope (documented limit) ========
+
+def test_hanja_korean_names_route_through_chinese():
+    """金正恩 (the Hanja form of 김정은 'Kim Jong-un') routes through
+    pypinyin because the engine has no Hanja → Korean-reading dictionary.
+    Output is the Mandarin pinyin of those characters, not the Korean
+    reading. Caller must supply Hangul to get a Korean transliteration."""
+    out = transliterate("金正恩", "en", source_lang="zh")
+    assert out is not None and "Jin" in out  # Mandarin Jin, not Korean Kim
+
+
+# === Press-style vowel renderings differ from RR (documented) =============
+
+@pytest.mark.parametrize(
+    "name, rr, press_alt",
+    [
+        ("김정일", "Kim Jeong-il", "Kim Jong-il"),
+        ("노무현", "Noh Mu-hyeon", "Roh Moo-hyun"),
+        ("이명박", "Lee Myeong-bak", "Lee Myung-bak"),
+    ],
+)
+def test_rr_vowel_choice(name, rr, press_alt):
+    """We emit RR consistently. Press style varies by individual and
+    isn't recoverable from the Hangul. RR is the deterministic baseline."""
+    assert transliterate(name, "en", source_lang="ko") == rr
+
+
 # === supported_pairs reflects the new route ================================
 
 def test_supported_pairs_includes_ko_en():

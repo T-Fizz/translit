@@ -234,14 +234,30 @@ overlay (or a `Title()`'d RR fallback).
 **Same `name_order` flag.** Family-first is the default; `given-first`
 swaps to `Geun-hye Park` etc. The flag works the same way as for Japanese.
 
-**Out of scope (for now):**
-- Korean honorifics (씨/-ssi, 님/-nim, 선생님/-seonsaengnim) — not as
-  pervasive on rendered names as JA honorifics; could add a small dict.
-- North Korean transliteration conventions (which differ slightly from
-  South Korean RR).
-- Per-person spelling overrides (`이수만 → "Lee Soo-man"` vs RR
-  `"Lee Su-man"`). RR is the deterministic baseline; press alternatives
-  vary by individual and aren't recoverable from the Hangul alone.
+**Korean honorifics.** Same longest-match-wins suffix-strip mechanic as
+the JA dict, with three entries:
+
+```python
+("선생님", "-seonsaengnim"),  # teacher / formal address
+("씨", "-ssi"),               # general
+("님", "-nim"),               # respectful
+```
+
+`박지성씨 → "Park Ji-seong-ssi"`, `이선생님 → "Lee-seonsaengnim"`. Bare
+honorifics with no name attached fall through to plain RR.
+
+**Out of scope (deferred):**
+- **Hanja form of Korean names.** `金正恩` (the Hanja spelling of 김정은)
+  routes through `pypinyin` and emits Mandarin pinyin (`Jin Zheng En`),
+  not the Korean reading. Recovering the Korean reading would need a
+  Hanja → Hangul-reading dictionary (~1000+ entries, not all reversible —
+  one Hanja can have multiple Korean readings). Callers can pre-convert
+  to Hangul before calling.
+- **North Korean transliteration conventions** (differ slightly from RR).
+- **Per-person spelling overrides.** `이수만 → "Lee Soo-man"` vs RR
+  `"Lee Su-man"`; `김정은 → "Kim Jong-un"` (press) vs `"Kim Jeong-eun"`
+  (RR). The choice depends on individual preference and isn't
+  recoverable from the Hangul alone. RR is the deterministic baseline.
 
 ## 7. The edge-case bestiary
 
@@ -452,6 +468,7 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 | zh → pinyin | [`translit_core/engine.py:_zh_to_pinyin`](../translit_core/engine.py) |
 | en → katakana | [`translit_core/engine.py:_en_to_katakana`](../translit_core/engine.py) |
 | ko → roman + surname overlay | [`translit_core/engine.py:_ko_to_roman`](../translit_core/engine.py) |
+| Korean honorific dictionary | [`translit_core/engine.py:_KO_HONORIFICS_RAW`](../translit_core/engine.py) |
 | Korean RR per-syllable table | [`translit_core/engine.py:_RR_INITIALS`](../translit_core/engine.py) |
 | Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
 | Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |

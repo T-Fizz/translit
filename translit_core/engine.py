@@ -352,6 +352,16 @@ _RR_FINALS = (
     "t",  "ng", "t",  "t",  "k",  "t",  "p",  "t",
 )
 
+# Korean honorifics. Same longest-match-first pattern as the JA dict —
+# 선생님 (3 syllables) must out-rank 님 (1 syllable).
+_KO_HONORIFICS_RAW = [
+    ("선생님", "-seonsaengnim"),
+    ("씨", "-ssi"),
+    ("님", "-nim"),
+]
+_KO_HONORIFICS = sorted(_KO_HONORIFICS_RAW, key=lambda x: -len(x[0]))
+
+
 # Traditional Western-friendly surname spellings — what people actually
 # put on their passports and business cards. RR would say "Gim/I/Bak/Choe"
 # but every newspaper, sports broadcast, and visa form uses these forms.
@@ -439,6 +449,20 @@ def _ko_to_roman(name: str, name_order: str = "family-first") -> str | None:
     if not syllables:
         return None
 
+    # Honorific stripping (parallel to the JA path). Longest suffix wins so
+    # 선생님 outranks 님; the bare-honorific guard prevents stripping 씨
+    # alone (which falls through to a normal RR romanization).
+    honorific_roman = ""
+    hangul_str = "".join(syllables)
+    for suffix, roman in _KO_HONORIFICS:
+        if hangul_str.endswith(suffix) and len(hangul_str) > len(suffix):
+            hangul_str = hangul_str[: -len(suffix)]
+            honorific_roman = roman
+            break
+    syllables = list(hangul_str)
+    if not syllables:
+        return None
+
     # Two-syllable family detection: longest-match-wins. If the first 2
     # syllables are a known 2-syllable family name (남궁, 황보, …), treat
     # them as the family — even if there's no given-name remainder.
@@ -460,7 +484,7 @@ def _ko_to_roman(name: str, name_order: str = "family-first") -> str | None:
         family = family_roman.capitalize()
 
     if not given_chars:
-        return family  # single-syllable input is just the family
+        return family + honorific_roman  # single-syllable input is just the family
 
     given_pieces = [_ko_syllable_to_roman(c) for c in given_chars]
     if any(not p for p in given_pieces):
@@ -472,8 +496,8 @@ def _ko_to_roman(name: str, name_order: str = "family-first") -> str | None:
     )
 
     if name_order == "given-first":
-        return f"{given} {family}"
-    return f"{family} {given}"
+        return f"{given} {family}" + honorific_roman
+    return f"{family} {given}" + honorific_roman
 
 
 def _en_to_katakana(name: str) -> str | None:
