@@ -377,7 +377,46 @@ consonant and look one position further back for the cluster check.
   `indic-transliteration` lib supports them, but their conventions
   differ enough that each needs its own pipeline.
 
-## 9. The edge-case bestiary
+## 9. Arabic: the dictionary path
+
+Arabic is the first pair where I gave up on rules-based romanization
+and shipped a curated dictionary instead. The reason is structural:
+**Arabic written without short vowels is fundamentally
+under-determined for romanization.** The string م-ح-م-د could be
+"Muhammad", "Mohammed", "Mahmoud", or several other readings depending
+on the consensus pronunciation. Without vowel context (which native
+Arabic text rarely includes), there's no rule we can write.
+
+The path the academic community took was Buckwalter encoding — a
+1-to-1 ASCII mapping (m-h-m-d for محمد). It's lossless but unreadable
+for English readers. Press uses **established personal-name spellings**
+that are essentially memorized rather than derived.
+
+So this is what we ship: a ~50-entry overlay of common Arabic names
+with their established press spellings. Names not in the overlay
+return None — fail-soft is honest. The alternative (consonant-only
+output) would be useless for English readers.
+
+**Input normalization before lookup** handles the noisy parts:
+- Tashkeel (vowel diacritics, U+064B-U+0652) stripped — vowelized and
+  unvowelized inputs hit the same key.
+- Hamza-bearing alifs (أ, إ, آ) → plain alif (ا).
+- Alef maksura (ى) → ya (ي).
+- Tatweel (ـ, U+0640) — visual stretching, removed.
+- NFKC normalization first — handles the Allah ligature ﷲ → الله, etc.
+
+**Multi-token compound names** (عبد الله, عبد الرحمن, أبو بكر) are stored
+as full-input keys. Whole-input lookup beats per-word fallback so
+"Abdullah" wins over trying to match "عبد" + "الله" separately.
+
+**Coverage trade-off.** Curated overlay covers ~70-80% of names English
+press writes about — political figures, athletes, entertainment figures,
+common given names. Unusual names, regional variations, and modern
+nicknames return None. A real solution would need either a much larger
+name dataset (~5000+ entries) or LLM Tier-2 fallback. Documented as
+a Tier-2 candidate.
+
+## 10. The edge-case bestiary
 
 Things we ran into during testing, and how each is handled.
 
@@ -519,7 +558,7 @@ in Japanese are already given-first by convention.
 Chinese pinyin output (`王明 → "Wang Ming"`) also follows family-first; a
 similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
-## 10. What you can rely on, what you can't
+## 11. What you can rely on, what you can't
 
 **Reliable:**
 - Common Japanese names (`pykakasi` covers the top several thousand).
@@ -533,6 +572,9 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
   `Akhmatova`, `Fyodor`, `Yuryevich`.
 - Hindi (Devanagari) names via IAST + schwa-delete + diacritic strip —
   `Amit`, `Krishna`, `Narendra Modi`, `Bachchan`.
+- Arabic names via curated overlay (~50 entries) — common male/female
+  names + compounds (`Abdullah`, `Abdul-Rahman`). Unknown Arabic names
+  return None.
 - Common English first/last names and loanwords from `alkana`.
 - Multi-word English names: whitespace + hyphen splitting, joined with `・`.
 - Round-trip katakana → Western name (`ヴィクター → "Victor"`).
@@ -559,7 +601,7 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Translation (use Azure or DeepL).
 - Languages other than ja/zh/ko/en for now.
 
-## 11. Why a service at all (over just `pip install pykakasi`)
+## 12. Why a service at all (over just `pip install pykakasi`)
 
 If your consumer is Python and you only need ja → en, **just install
 `pykakasi` directly.** A warm `pykakasi.kakasi().convert()` call is ~3μs;
@@ -579,7 +621,7 @@ The HTTP service in `app/` adds value over `translit_core` only when:
 
 Otherwise: `pip install -e /path/to/translit` and call the library directly.
 
-## 12. Where to look in the code
+## 13. Where to look in the code
 
 | Concern | File / function |
 |---|---|
@@ -596,6 +638,8 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 | Russian Cyrillic table + digraphs | [`translit_core/engine.py:_RU_MAP`](../translit_core/engine.py) |
 | hi → latin (IAST + schwa-delete) | [`translit_core/engine.py:_hi_to_latin`](../translit_core/engine.py) |
 | IAST → press-style fixup table | [`translit_core/engine.py:_IAST_TO_PRESS`](../translit_core/engine.py) |
+| ar → latin (curated name overlay) | [`translit_core/engine.py:_ar_to_latin`](../translit_core/engine.py) |
+| Arabic name dictionary | [`translit_core/engine.py:_AR_NAME_OVERLAY_RAW`](../translit_core/engine.py) |
 | Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
 | Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |
 | Honorific tests | [`tests/test_ja_honorifics.py`](../tests/test_ja_honorifics.py) |

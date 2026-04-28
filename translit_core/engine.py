@@ -344,6 +344,132 @@ def _hi_to_latin(name: str) -> str | None:
     return " ".join(t.title() for t in text.split() if t)
 
 
+# --- ar → latin (curated name overlay) -------------------------------------
+
+# Arabic diacritics (tashkeel) we strip before dictionary lookup.
+# Modern Arabic text rarely includes these except in religious/formal
+# contexts; our dict keys are stored without them.
+_AR_TASHKEEL = "".join(chr(c) for c in range(0x064B, 0x0653)) + "ٰ"
+
+# Alif/ya/ta variants normalized to canonical forms before lookup.
+_AR_NORMALIZE = {
+    "أ": "ا", "إ": "ا", "آ": "ا",  # hamza-bearing alifs → plain alif
+    "ى": "ي",                        # alef maksura → ya
+    "ـ": "",                         # tatweel (kashida) — visual stretch
+}
+
+
+def _ar_normalize_for_lookup(s: str) -> str:
+    """NFKC-normalize, strip tashkeel, fold alif/ya variants. Output is
+    the canonical form used as keys in `_AR_NAME_OVERLAY`."""
+    s = _normalize(s)  # NFKC handles the Allah ligature ﷲ → الله, etc.
+    s = "".join(c for c in s if c not in _AR_TASHKEEL)
+    for src, dst in _AR_NORMALIZE.items():
+        s = s.replace(src, dst)
+    return s
+
+
+# Common Arabic names with their established press / English-language
+# spellings. This is intentionally a curated overlay, not a derivation —
+# Arabic without short vowels (the normal written form) is fundamentally
+# under-determined for romanization. ~50 entries cover the most-encountered
+# Arabic names in English-language press.
+#
+# Keys are stored in normalized form (no tashkeel, plain alif). The
+# normalizer applied at lookup time matches input to keys.
+_AR_NAME_OVERLAY_RAW = {
+    # Male given names
+    "محمد": "Muhammad",
+    "احمد": "Ahmad",
+    "علي": "Ali",
+    "عمر": "Omar",
+    "حسن": "Hassan",
+    "حسين": "Hussein",
+    "خالد": "Khalid",
+    "صالح": "Saleh",
+    "ابراهيم": "Ibrahim",
+    "يوسف": "Yusuf",
+    "سلمان": "Salman",
+    "محمود": "Mahmoud",
+    "كريم": "Karim",
+    "سامي": "Sami",
+    "رشيد": "Rashid",
+    "جمال": "Jamal",
+    "بلال": "Bilal",
+    "حمزة": "Hamza",
+    "زياد": "Ziyad",
+    "طارق": "Tariq",
+    "فيصل": "Faisal",
+    "هاني": "Hani",
+    "وليد": "Walid",
+    "ياسر": "Yasser",
+    "زين": "Zain",
+    "سعيد": "Saeed",
+    # Female given names
+    "فاطمة": "Fatima",
+    "عائشة": "Aisha",
+    "خديجة": "Khadija",
+    "مريم": "Mariam",
+    "ليلى": "Layla",
+    "سارة": "Sara",
+    "نور": "Nour",
+    "زينب": "Zaynab",
+    "ياسمين": "Yasmin",
+    "امينة": "Amina",
+    "سلمى": "Salma",
+    "نادية": "Nadia",
+    "هدى": "Huda",
+    "رنا": "Rana",
+    "هبة": "Heba",
+    "اسماء": "Asma",
+    # Compound (multi-token) — must out-rank per-word lookup
+    "عبد الله": "Abdullah",
+    "عبد الرحمن": "Abdul-Rahman",
+    "عبد العزيز": "Abdul-Aziz",
+    "عبد الكريم": "Abdul-Karim",
+    "عبد الرحيم": "Abdul-Rahim",
+    "ابو بكر": "Abu Bakr",
+    "ام كلثوم": "Umm Kulthum",
+}
+
+# Pre-normalize the dict keys so input normalization (which folds maksura
+# ى → ya ي, hamza-bearing alifs → plain alif, etc.) lands on the same
+# canonical key regardless of which spelling was authored above.
+_AR_NAME_OVERLAY = {
+    _ar_normalize_for_lookup(k): v for k, v in _AR_NAME_OVERLAY_RAW.items()
+}
+
+
+def _ar_to_latin(name: str) -> str | None:
+    """Arabic → Latin via curated name overlay.
+
+    Arabic written without short vowels (the normal form) can't be
+    romanized deterministically from rules — there's no way to know
+    whether m-h-m-d should be "Muhammad", "Mohammed", or something else.
+    So this is a dictionary lookup against ~50 curated common names.
+    Inputs not in the dictionary return None (fail-soft).
+
+    The full-input is tried first so multi-token compounds like
+    'عبد الله' → 'Abdullah' beat the per-word fallback.
+    """
+    cleaned = _ar_normalize_for_lookup(name).strip()
+    if not cleaned:
+        return None
+    # Whole-input lookup catches compounds.
+    full = _AR_NAME_OVERLAY.get(cleaned)
+    if full is not None:
+        return full
+    # Per-word lookup, all-or-nothing.
+    words = cleaned.split()
+    out: list[str] = []
+    for w in words:
+        roman = _AR_NAME_OVERLAY.get(w)
+        if roman is None:
+            return None
+        out.append(roman)
+    return " ".join(out) if out else None
+
+
 # --- en → katakana fallbacks (acronyms, punctuation handling) --------------
 
 _LETTER_TO_KATAKANA = {
@@ -750,6 +876,8 @@ def transliterate(
         return _ru_to_latin(name)
     if src == "hi":
         return _hi_to_latin(name)
+    if src == "ar":
+        return _ar_to_latin(name)
     return None
 
 
@@ -761,5 +889,6 @@ def supported_pairs() -> list[dict]:
         {"source": "ko", "target": "latin", "method": "RR+traditional-surname-overlay"},
         {"source": "ru", "target": "latin", "method": "BGN/PCGN press-style"},
         {"source": "hi", "target": "latin", "method": "IAST + press-style schwa-deletion"},
+        {"source": "ar", "target": "latin", "method": "curated-name-overlay (~50 entries)"},
         {"source": "en", "target": "ja", "method": "alkana"},
     ]

@@ -116,10 +116,12 @@ def test_honorific_stripped_and_appended(client, auth_headers):
 
 
 def test_unsupported_source_returns_200_with_reason(client, auth_headers):
-    """Arabic isn't supported in v1 — engine detects 'ar' but routes nowhere."""
+    """Detected source but no romanizer can produce output → 'unsupported_pair'.
+    Using an Arabic name not in the curated overlay (the overlay only
+    covers ~50 common names; this exercises the fail-soft path)."""
     r = client.post(
         "/v1/transliterate",
-        json={"name": "محمد", "target_lang": "en"},
+        json={"name": "زياده", "target_lang": "en"},
         headers=auth_headers,
     )
     assert r.status_code == 200
@@ -255,7 +257,7 @@ def test_batch_mixed_supported_and_unsupported(client, auth_headers):
         json={
             "entries": [
                 {"name": "たなか", "target_lang": "en"},
-                {"name": "محمد", "target_lang": "en"},
+                {"name": "زياده", "target_lang": "en"},
             ]
         },
         headers=auth_headers,
