@@ -21,6 +21,7 @@ dependencies = [
     "pypinyin>=0.50,<1",
     "alkana>=0.0.3",
     "indic-transliteration>=2.3,<3",
+    "pythainlp>=5.0,<6",
 ]
 
 [project.optional-dependencies]

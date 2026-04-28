@@ -470,6 +470,48 @@ def _ar_to_latin(name: str) -> str | None:
     return " ".join(out) if out else None
 
 
+# --- th → latin (RTGS via pythainlp) ---------------------------------------
+
+
+def _th_to_latin(name: str) -> str | None:
+    """Thai (Naskh script) → Latin via Royal Thai General System (RTGS).
+
+    pythainlp does the hard parts: tone stripping, vowel reordering
+    (Thai writes some vowels before the consonant they phonologically
+    follow), final-consonant devoicing, and consonant cluster handling.
+    We pre-strip non-Thai chars so punctuation/digits don't leak into
+    the output, and refuse if mixed Thai+Latin alphabetic input shows
+    up (parallel to the Russian path).
+
+    Caveat: famous-person spellings sometimes deviate from RTGS in
+    English press (Yingluck vs RTGS 'yinglakt', Abhisit vs 'phisit').
+    Those are personal-name choices; not recoverable from rules.
+    """
+    try:
+        from pythainlp.transliterate import romanize
+    except ImportError:
+        return None
+    cleaned_chars: list[str] = []
+    for c in name:
+        if 0x0E00 <= ord(c) <= 0x0E7F:
+            # Thai block; drop Thai digits (U+0E50-U+0E59)
+            if 0x0E50 <= ord(c) <= 0x0E59:
+                continue
+            cleaned_chars.append(c)
+        elif c.isspace():
+            cleaned_chars.append(" ")
+        elif c.isalpha():
+            return None  # non-Thai letter — refuse rather than mix
+        # else: drop ASCII digits / punctuation
+    cleaned = "".join(cleaned_chars).strip()
+    if not cleaned:
+        return None
+    out = romanize(cleaned)
+    if not out or not out.strip():
+        return None
+    return " ".join(t.title() for t in out.split() if t)
+
+
 # --- en → katakana fallbacks (acronyms, punctuation handling) --------------
 
 _LETTER_TO_KATAKANA = {
@@ -878,6 +920,8 @@ def transliterate(
         return _hi_to_latin(name)
     if src == "ar":
         return _ar_to_latin(name)
+    if src == "th":
+        return _th_to_latin(name)
     return None
 
 
@@ -890,5 +934,6 @@ def supported_pairs() -> list[dict]:
         {"source": "ru", "target": "latin", "method": "BGN/PCGN press-style"},
         {"source": "hi", "target": "latin", "method": "IAST + press-style schwa-deletion"},
         {"source": "ar", "target": "latin", "method": "curated-name-overlay (~50 entries)"},
+        {"source": "th", "target": "latin", "method": "RTGS via pythainlp"},
         {"source": "en", "target": "ja", "method": "alkana"},
     ]

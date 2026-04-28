@@ -33,6 +33,7 @@ curl -X POST https://translit.example.com/v1/transliterate \
 | Russian (Cyrillic) | Latin | Press-style BGN/PCGN (in-repo) — Mikhail/Akhmatova/Fyodor, soft signs dropped |
 | Hindi (Devanagari) | Latin | `indic-transliteration` IAST + press-style schwa-deletion (Amit/Krishna/Narendra) |
 | Arabic | Latin | Curated overlay of ~50 common Arabic names (Muhammad/Ali/Fatima/Abdullah). Unknown names return None — Arabic without short vowels is fundamentally under-determined |
+| Thai (Thai script) | Latin | RTGS via `pythainlp` (Somchai/Thaksin/Prayut). Tone marks dropped; vowel reordering handled by lib |
 | English (Latin)         | Japanese (katakana) | `alkana` dictionary; multi-word names join with `・` |
 
 See [docs/DESIGN.md → Roadmap](docs/DESIGN.md) for what's coming.

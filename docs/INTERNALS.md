@@ -416,7 +416,41 @@ nicknames return None. A real solution would need either a much larger
 name dataset (~5000+ entries) or LLM Tier-2 fallback. Documented as
 a Tier-2 candidate.
 
-## 10. The edge-case bestiary
+## 10. Thai (RTGS via pythainlp)
+
+Thai is the only Tier-1 pair where I leaned heavily on a third-party
+library — `pythainlp.transliterate.romanize`. Thai's complexity earns
+that:
+
+- **No word boundaries** in script. Thai writes words run-together;
+  segmentation requires a tokenizer with a Thai dictionary.
+- **Tonal language** with five distinctive tones. RTGS doesn't preserve
+  them (acceptable trade for legibility), but parsing them out of the
+  script is non-trivial.
+- **Vowel reordering**. Some Thai vowels are written *before* the
+  consonant they phonologically follow (เ, แ, โ, ใ, ไ). The string
+  เก looks like /e/+/k/ but is pronounced /k/+/e/.
+- **Final-consonant devoicing rules**. จ/ษ/ช/ซ become "t" in final
+  position; ภ/พ/ฟ/ฝ become "p". Lots of consonant alternation rules.
+- **Consonant clusters and ligatures** for traditional spellings.
+
+Implementing all that ourselves would have been ~200 lines of fragile
+linguistic rules; pythainlp is a maintained NLP toolkit that already
+nails it. Cost: it's a heavy dependency (~50MB with its data files).
+
+Our wrapper does the boundary work:
+- Strip non-Thai characters from input (digits, punctuation, including
+  Thai digits U+0E50-U+0E59).
+- Refuse mixed Thai + Latin alphabetic input (otherwise pythainlp would
+  pass the Latin chars through unchanged).
+- Title-case per word.
+
+**Famous-person personal spellings** (Yingluck, Abhisit, Surin, …) often
+deviate from strict RTGS. Recovering those would need an override
+dictionary; we emit RTGS as the deterministic baseline and accept the
+occasional "Phisit" instead of press "Abhisit".
+
+## 11. The edge-case bestiary
 
 Things we ran into during testing, and how each is handled.
 
@@ -558,7 +592,7 @@ in Japanese are already given-first by convention.
 Chinese pinyin output (`王明 → "Wang Ming"`) also follows family-first; a
 similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
-## 11. What you can rely on, what you can't
+## 12. What you can rely on, what you can't
 
 **Reliable:**
 - Common Japanese names (`pykakasi` covers the top several thousand).
@@ -575,6 +609,8 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Arabic names via curated overlay (~50 entries) — common male/female
   names + compounds (`Abdullah`, `Abdul-Rahman`). Unknown Arabic names
   return None.
+- Thai names via RTGS (`pythainlp`) — `Somchai`, `Thaksin`, `Prayut`.
+  Personal-name press spellings (Yingluck, Abhisit) deviate from RTGS.
 - Common English first/last names and loanwords from `alkana`.
 - Multi-word English names: whitespace + hyphen splitting, joined with `・`.
 - Round-trip katakana → Western name (`ヴィクター → "Victor"`).
@@ -601,7 +637,7 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Translation (use Azure or DeepL).
 - Languages other than ja/zh/ko/en for now.
 
-## 12. Why a service at all (over just `pip install pykakasi`)
+## 13. Why a service at all (over just `pip install pykakasi`)
 
 If your consumer is Python and you only need ja → en, **just install
 `pykakasi` directly.** A warm `pykakasi.kakasi().convert()` call is ~3μs;
@@ -621,7 +657,7 @@ The HTTP service in `app/` adds value over `translit_core` only when:
 
 Otherwise: `pip install -e /path/to/translit` and call the library directly.
 
-## 13. Where to look in the code
+## 14. Where to look in the code
 
 | Concern | File / function |
 |---|---|
@@ -640,6 +676,7 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 | IAST → press-style fixup table | [`translit_core/engine.py:_IAST_TO_PRESS`](../translit_core/engine.py) |
 | ar → latin (curated name overlay) | [`translit_core/engine.py:_ar_to_latin`](../translit_core/engine.py) |
 | Arabic name dictionary | [`translit_core/engine.py:_AR_NAME_OVERLAY_RAW`](../translit_core/engine.py) |
+| th → latin (pythainlp RTGS) | [`translit_core/engine.py:_th_to_latin`](../translit_core/engine.py) |
 | Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
 | Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |
 | Honorific tests | [`tests/test_ja_honorifics.py`](../tests/test_ja_honorifics.py) |
