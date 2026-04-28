@@ -1,64 +1,83 @@
 # translit
 
-Deterministic name-aware transliteration as a service. Send a name and a
-target language, get back a readable romanization — with Japanese
-honorifics, Chinese name spacing, and kanji source-language
-disambiguation handled correctly.
+Deterministic, name-aware transliteration. A small Python library
+(`translit_core`) plus an optional FastAPI service (`app/`). Eight
+language pairs, each with thoughtful edge-case handling — Japanese
+honorifics, Korean traditional surname spellings, Russian press-style,
+Hindi schwa deletion, and more.
 
-**Demo:** [t-fizz.github.io/translit](https://t-fizz.github.io/translit/)
+**Live demo:** [t-fizz.github.io/translit](https://t-fizz.github.io/translit/)
+(real Python in your browser via Pyodide)
 
-## Quick start
+## Quick start (library)
 
 ```bash
-curl -X POST https://translit.example.com/v1/transliterate \
-  -H "x-api-key: $TRANSLIT_KEY" \
-  -H "content-type: application/json" \
-  -d '{"name": "カナちゃん", "source_lang": "ja", "target_lang": "en"}'
-# → {"phonetic":"Kana-chan","method":"pykakasi","cached":true}
+pip install -e git+https://github.com/T-Fizz/translit.git#egg=translit-core
 ```
 
-## Documents
+```python
+from translit_core import transliterate
 
-- **[docs/INTERNALS.md](docs/INTERNALS.md)** — engine deep-dive: how the wrapper works, every edge case we hit, and the hard problems we couldn't solve
-- **[docs/TENETS.md](docs/TENETS.md)** — non-negotiable principles
-- **[docs/DESIGN.md](docs/DESIGN.md)** — architecture, API contract, data model, roadmap
-- **[docs/SLA.md](docs/SLA.md)** — uptime, latency, rate limits, versioning
-- **[docs/COMPETITIVE_ANALYSIS.md](docs/COMPETITIVE_ANALYSIS.md)** — honest survey of existing services
+transliterate("カナちゃん", "en")                              # → "Kana-chan"
+transliterate("山田太郎", "en", source_lang="ja")              # → "Yamada Taro"
+transliterate("김정은", "en", source_lang="ko")                # → "Kim Jeong-eun"
+transliterate("Иван Сергеевич Тургенев", "en")                # → "Ivan Sergeevich Turgenev"
+transliterate("नरेंद्र मोदी", "en", source_lang="hi")           # → "Narendra Modi"
+transliterate("عبد الرحمن", "en", source_lang="ar")            # → "Abdul-Rahman"
+transliterate("ทักษิณ", "en", source_lang="th")               # → "Thaksin"
+transliterate("John Smith", "ja")                              # → "ジョン・スミス"
+```
+
+Returns `None` (fail-soft) when the engine can't deterministically
+romanize an input. Warm calls run in microseconds.
+
+## Quick start (HTTP service)
+
+The repo also ships a FastAPI service that wraps the library with
+API-key auth, an in-memory + Supabase cache, and the contract in
+[docs/DESIGN.md](docs/DESIGN.md). Useful when the consumer isn't
+Python or when multiple apps want to share a cache.
+
+```bash
+curl -X POST http://localhost:8080/v1/transliterate \
+  -H "x-api-key: dev-local-key" \
+  -H "content-type: application/json" \
+  -d '{"name": "カナちゃん", "source_lang": "ja", "target_lang": "en"}'
+# → {"phonetic":"Kana-chan","method":"pykakasi","cached":true,...}
+```
 
 ## Currently supported
 
 | Source script | Target | Method |
 |---|---|---|
-| Japanese (kana + kanji) | Latin | `pykakasi` (passport-style Hepburn) + honorific dictionary |
-| Chinese (Hanzi) | Latin | `pypinyin` (no tone marks) |
-| Korean (Hangul) | Latin | Revised Romanization (per-syllable, in-repo) + traditional surname overlay (Kim/Lee/Park/...) |
-| Russian (Cyrillic) | Latin | Press-style BGN/PCGN (in-repo) — Mikhail/Akhmatova/Fyodor, soft signs dropped |
-| Hindi (Devanagari) | Latin | `indic-transliteration` IAST + press-style schwa-deletion (Amit/Krishna/Narendra) |
-| Arabic | Latin | Curated overlay of ~50 common Arabic names (Muhammad/Ali/Fatima/Abdullah). Unknown names return None — Arabic without short vowels is fundamentally under-determined |
-| Thai (Thai script) | Latin | RTGS via `pythainlp` (Somchai/Thaksin/Prayut). Tone marks dropped; vowel reordering handled by lib |
-| English (Latin)         | Japanese (katakana) | `alkana` dictionary; multi-word names join with `・` |
+| Japanese (kana + kanji) | Latin | `pykakasi` passport-style + 22-entry honorific dict + reverse-katakana round-trip (`ヴィクター → Victor`) |
+| Chinese (Hanzi) | Latin | `pypinyin` (no tone marks), family-first |
+| Korean (Hangul) | Latin | In-repo per-syllable RR + 36-entry traditional surname overlay (Kim/Lee/Park) + 3-entry honorific dict (씨/님/선생님) |
+| Russian (Cyrillic) | Latin | In-repo BGN/PCGN press-style — Mikhail/Akhmatova/Fyodor, ъе/ье digraph fix, soft signs dropped |
+| Hindi (Devanagari) | Latin | `indic-transliteration` IAST + diacritic strip + schwa deletion + aspirated-digraph cluster fix |
+| Arabic | Latin | Curated overlay of ~50 common names (rules-based impossible without short vowels) |
+| Thai (Thai script) | Latin | RTGS via `pythainlp` |
+| English (Latin) | Japanese (katakana) | `alkana` dictionary + A–Z acronym fallback (`FBI → エフビーアイ`) + hyphen-name handling |
 
-See [docs/DESIGN.md → Roadmap](docs/DESIGN.md) for what's coming.
+Plus a `name_order="given-first"` flag that flips ja and ko output to
+older Western convention (`Yamada Taro → Taro Yamada`).
+
+## Documents
+
+- **[docs/INTERNALS.md](docs/INTERNALS.md)** — engine deep-dive: every edge case we found, what we fixed, what we accepted, and why
+- **[docs/TENETS.md](docs/TENETS.md)** — the principles behind deterministic-and-fail-soft
+- **[docs/DESIGN.md](docs/DESIGN.md)** — architecture, API contract, data model, roadmap (FastAPI service)
+- **[docs/SLA.md](docs/SLA.md)** — uptime, latency, rate limits, versioning
+- **[docs/COMPETITIVE_ANALYSIS.md](docs/COMPETITIVE_ANALYSIS.md)** — survey of existing services
 
 ## Local development
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env    # fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, API_KEYS
-uvicorn app.main:app --reload
-```
-
-Test:
-```bash
-pytest
-```
-
-## Deploy
-
-```bash
-fly deploy
+pip install -r requirements.txt   # resolves to -e .[service,test]
+pytest                             # 547 passing
+uvicorn app.main:app --reload      # runs the optional FastAPI service
 ```
 
 ## License

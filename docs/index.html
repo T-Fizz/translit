@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>translit — name-aware transliteration</title>
+<meta name="description" content="A small Python library for name-aware transliteration across Japanese, Chinese, Korean, Russian, Hindi, Arabic, Thai, and English. Try it live in your browser.">
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --fg-muted: #666;
+    --fg-subtle: #999;
+    --bg: #fafafa;
+    --bg-code: #f0f0f0;
+    --bg-sub: #fff;
+    --bg-input: #fff;
+    --border: #e0e0e0;
+    --border-strong: #c0c0c0;
+    --accent: #0066cc;
+    --accent-soft: #e6f0ff;
+    --warn: #b8860b;
+    --error: #b00020;
+    --success: #2a8a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e8e8e8;
+      --fg-muted: #999;
+      --fg-subtle: #666;
+      --bg: #0d0d0d;
+      --bg-code: #1a1a1a;
+      --bg-sub: #161616;
+      --bg-input: #1a1a1a;
+      --border: #2a2a2a;
+      --border-strong: #444;
+      --accent: #5c9eff;
+      --accent-soft: #1a2a44;
+      --warn: #d4a843;
+      --error: #ff6b6b;
+      --success: #6cc26c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 4rem 1.5rem 6rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.5rem;
+  }
+  h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 3rem 0 1rem;
+    color: var(--fg);
+    letter-spacing: -0.005em;
+  }
+  p { margin: 0 0 1rem; }
+  .tagline { color: var(--fg-muted); font-size: 1.05rem; margin: 0 0 2rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    margin: 0 0 1.5rem;
+    line-height: 1.5;
+  }
+  code { color: var(--fg); }
+  pre code { background: none; padding: 0; }
+  :not(pre) > code {
+    background: var(--bg-code);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  /* ========= Try-it panel ========= */
+  .try {
+    background: var(--bg-sub);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 0 0 2rem;
+  }
+  .try .controls {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 0.85rem;
+  }
+  .try select, .try input[type=text] {
+    background: var(--bg-input);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.95rem;
+    color: var(--fg);
+    font-family: inherit;
+  }
+  .try select { cursor: pointer; }
+  .try select:focus, .try input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .try .arrow { color: var(--fg-subtle); font-size: 1.05rem; }
+  .try input[type=text] {
+    width: 100%;
+    font-size: 1.05rem;
+    margin-bottom: 0.85rem;
+  }
+  .try .order {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    color: var(--fg-muted);
+    font-size: 0.85rem;
+    margin-bottom: 0.85rem;
+  }
+  .try .order label { display: flex; gap: 0.35rem; align-items: center; cursor: pointer; }
+  .try .output {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    background: var(--bg-code);
+    min-height: 3.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .try .output .value {
+    font-family: ui-monospace, monospace;
+    font-size: 1.1rem;
+    color: var(--accent);
+    word-break: break-word;
+  }
+  .try .output .value.empty { color: var(--fg-subtle); font-size: 0.95rem; font-style: italic; }
+  .try .output .value.null { color: var(--warn); font-size: 0.95rem; }
+  .try .output .meta {
+    color: var(--fg-subtle);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: right;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .try .status {
+    margin-top: 0.85rem;
+    font-size: 0.85rem;
+    color: var(--fg-muted);
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .try .status .dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--fg-subtle);
+    transition: background 0.2s;
+  }
+  .try .status.loading .dot { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+  .try .status.ready .dot { background: var(--success); }
+  .try .status.error .dot { background: var(--error); }
+  @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+  .try .quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+  }
+  .try .quick button {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.82rem;
+    color: var(--fg-muted);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .try .quick button:hover { border-color: var(--accent); color: var(--accent); }
+  .try .quick button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .try .note { color: var(--fg-subtle); font-size: 0.78rem; margin: 0.85rem 0 0; }
+
+  /* ========= Pairs table + examples (kept from v1) ========= */
+  .pairs {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+  }
+  .pairs th, .pairs td {
+    text-align: left;
+    padding: 0.65rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .pairs th {
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+  }
+  .pairs td:first-child { color: var(--fg-muted); white-space: nowrap; }
+  .pairs td.note { color: var(--fg-subtle); font-size: 0.85em; }
+
+  ul.flat { padding-left: 1.25rem; margin: 0 0 1rem; }
+  ul.flat li { margin: 0.25rem 0; }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4rem 0 2rem;
+  }
+  footer {
+    color: var(--fg-subtle);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  footer a { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>translit</h1>
+  <p class="tagline">A small Python library for <strong>name-aware</strong> transliteration. Eight language pairs. <a href="https://github.com/T-Fizz/translit">github.com/T-Fizz/translit</a></p>
+
+  <h2>Try it</h2>
+  <div class="try" id="try">
+    <div class="controls">
+      <select id="src">
+        <option value="auto">auto-detect</option>
+        <option value="ja">Japanese</option>
+        <option value="zh">Chinese</option>
+        <option value="ko">Korean</option>
+        <option value="ru">Russian</option>
+        <option value="hi">Hindi</option>
+        <option value="ar">Arabic</option>
+        <option value="th" disabled>Thai (browser-demo unavailable)</option>
+        <option value="latin">English (Latin)</option>
+      </select>
+      <span class="arrow">→</span>
+      <select id="tgt">
+        <option value="en">Latin</option>
+        <option value="ja">Japanese (katakana)</option>
+      </select>
+    </div>
+    <input type="text" id="input" placeholder="Type a name… e.g. カナちゃん, 김정은, Ольга, John Smith" autocomplete="off" disabled />
+    <div class="order">
+      <label><input type="checkbox" id="given-first"> given-first order (Japanese / Korean)</label>
+    </div>
+    <div class="output">
+      <div class="value empty" id="output">…</div>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="status loading" id="status">
+      <span class="dot"></span>
+      <span id="status-text">loading Python in browser…</span>
+    </div>
+    <div class="quick" id="quick" hidden>
+      <!-- buttons injected after init -->
+    </div>
+    <p class="note">Runs the actual Python library locally in your browser via <a href="https://pyodide.org/">Pyodide</a> + WebAssembly. First load is ~30 MB (cached after); subsequent calls are instant. Thai is the only pair unavailable here — its library has native code that Pyodide can't run. Use the package directly for that.</p>
+  </div>
+
+  <h2>Examples</h2>
+  <pre><code>from translit_core import transliterate
+
+transliterate("カナちゃん", "en")                              # → "Kana-chan"
+transliterate("山田太郎", "en", source_lang="ja")              # → "Yamada Taro"
+transliterate("山田太郎", "en", source_lang="ja",
+              name_order="given-first")                      # → "Taro Yamada"
+transliterate("김정은", "en", source_lang="ko")                # → "Kim Jeong-eun"
+transliterate("Иван Сергеевич Тургенев", "en")                # → "Ivan Sergeevich Turgenev"
+transliterate("नरेंद्र मोदी", "en", source_lang="hi")           # → "Narendra Modi"
+transliterate("عبد الرحمن", "en", source_lang="ar")            # → "Abdul-Rahman"
+transliterate("ทักษิณ", "en", source_lang="th")               # → "Thaksin"
+transliterate("John Smith", "ja")                              # → "ジョン・スミス"</code></pre>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem;">Returns <code>None</code> when the engine can't deterministically romanize an input. Fail-soft: callers see a clear signal, never a half-translated guess.</p>
+
+  <h2>Install</h2>
+  <pre><code>pip install -e git+https://github.com/T-Fizz/translit.git#egg=translit-core</code></pre>
+
+  <h2>Supported pairs</h2>
+  <table class="pairs">
+    <tr><th>Source</th><th>Target</th><th>Method</th></tr>
+    <tr><td>Japanese (kana + kanji)</td><td>Latin</td><td class="note">pykakasi passport-style + 22 honorifics + reverse-katakana round-trip</td></tr>
+    <tr><td>Chinese (Hanzi)</td><td>Latin</td><td class="note">pypinyin (no tones)</td></tr>
+    <tr><td>Korean (Hangul)</td><td>Latin</td><td class="note">RR + 36-name surname overlay + 3 honorifics</td></tr>
+    <tr><td>Russian (Cyrillic)</td><td>Latin</td><td class="note">BGN/PCGN press-style</td></tr>
+    <tr><td>Hindi (Devanagari)</td><td>Latin</td><td class="note">IAST + diacritic strip + schwa deletion</td></tr>
+    <tr><td>Arabic</td><td>Latin</td><td class="note">Curated 50-name overlay</td></tr>
+    <tr><td>Thai</td><td>Latin</td><td class="note">RTGS via pythainlp</td></tr>
+    <tr><td>English (Latin)</td><td>Japanese (katakana)</td><td class="note">alkana + acronym fallback</td></tr>
+  </table>
+
+  <h2>What it handles</h2>
+  <ul class="flat">
+    <li>Japanese honorifics including compounds (<code>ちゃん</code>, <code>先生</code>, <code>兄ちゃん</code>, <code>にゃん</code>)</li>
+    <li>CJK source disambiguation (<code>田中</code> → Tanaka if ja, Tian Zhong if zh)</li>
+    <li>Multi-kanji morpheme splitting (<code>山田太郎</code> → "Yamada Taro")</li>
+    <li>Round-trip katakana → Western name (<code>ヴィクター</code> → "Victor")</li>
+    <li>Korean traditional surname spellings (Kim/Lee/Park, not Gim/I/Bak)</li>
+    <li>Korean 2-syllable family names (남궁/황보/사공/제갈/선우/독고)</li>
+    <li>Russian press-style (Mikhail not Mihail, Fyodor not Fedor, ъе/ье → ye)</li>
+    <li>Hindi schwa deletion with cluster + aspirated-digraph awareness</li>
+    <li>Arabic input normalization: tashkeel, alif variants, tatweel, Allah ligature</li>
+    <li>Half-width katakana / full-width Latin (NFKC)</li>
+    <li>Punctuation stripping, silent-character dropout detection</li>
+    <li>Family-first vs given-first name ordering (<code>name_order=</code>)</li>
+  </ul>
+
+  <h2>Read more</h2>
+  <ul class="flat">
+    <li><a href="https://github.com/T-Fizz/translit/blob/main/docs/INTERNALS.md">INTERNALS.md</a> — every edge case, why each library was picked or discarded</li>
+    <li><a href="https://github.com/T-Fizz/translit/blob/main/docs/DESIGN.md">DESIGN.md</a> — architecture and API contract for the optional FastAPI service</li>
+    <li><a href="https://github.com/T-Fizz/translit/blob/main/docs/TENETS.md">TENETS.md</a> — the principles behind the deterministic-and-fail-soft choices</li>
+  </ul>
+
+  <hr>
+  <footer><a href="https://github.com/T-Fizz/translit">github.com/T-Fizz/translit</a> · MIT</footer>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  const status = $("status");
+  const statusText = $("status-text");
+  const input = $("input");
+  const output = $("output");
+  const meta = $("meta");
+  const quick = $("quick");
+  const setStatus = (text, cls) => {
+    statusText.textContent = text;
+    status.className = "status " + (cls || "");
+  };
+
+  // Examples to show as quick-fill buttons after init.
+  const QUICK = [
+    { name: "カナちゃん",          src: "auto",  tgt: "en" },
+    { name: "山田太郎",            src: "ja",    tgt: "en" },
+    { name: "ヴィクター",          src: "auto",  tgt: "en" },
+    { name: "김정은",              src: "ko",    tgt: "en" },
+    { name: "남궁민",              src: "ko",    tgt: "en" },
+    { name: "박지성씨",            src: "ko",    tgt: "en" },
+    { name: "Иван Сергеевич",     src: "auto",  tgt: "en" },
+    { name: "Фёдор",               src: "auto",  tgt: "en" },
+    { name: "अमिताभ बच्चन",        src: "hi",    tgt: "en" },
+    { name: "कृष्ण",               src: "hi",    tgt: "en" },
+    { name: "محمد",                src: "ar",    tgt: "en" },
+    { name: "عبد الرحمن",          src: "ar",    tgt: "en" },
+    { name: "John Smith",          src: "auto",  tgt: "ja" },
+    { name: "FBI",                 src: "latin", tgt: "ja" },
+    { name: "Mary-Jane",           src: "auto",  tgt: "ja" },
+  ];
+
+  let pyodide;
+  let py_transliterate;
+
+  try {
+    setStatus("loading Pyodide runtime…", "loading");
+    pyodide = await loadPyodide({
+      indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/",
+    });
+
+    setStatus("installing transliteration libraries…", "loading");
+    await pyodide.loadPackage("micropip");
+    await pyodide.runPythonAsync(`
+      import micropip
+      # Pure-Python deps that Pyodide can install via PyPI.
+      await micropip.install([
+        "pykakasi",
+        "pypinyin",
+        "alkana",
+        "indic-transliteration",
+      ])
+    `);
+
+    setStatus("loading translit_core…", "loading");
+    // Fetch the engine source straight from the repo. Stays in sync with main.
+    const ENGINE_URL = "https://raw.githubusercontent.com/T-Fizz/translit/main/translit_core/engine.py";
+    const engineSrc = await fetch(ENGINE_URL, { cache: "force-cache" }).then((r) => {
+      if (!r.ok) throw new Error("Failed to fetch engine.py: HTTP " + r.status);
+      return r.text();
+    });
+    pyodide.runPython(engineSrc);
+    py_transliterate = pyodide.globals.get("transliterate");
+
+    setStatus("ready — type or click an example", "ready");
+    input.disabled = false;
+    input.focus();
+  } catch (err) {
+    setStatus("failed to load: " + (err.message || err), "error");
+    console.error(err);
+    return;
+  }
+
+  // Quick-fill buttons.
+  quick.hidden = false;
+  for (const ex of QUICK) {
+    const b = document.createElement("button");
+    b.textContent = ex.name;
+    b.addEventListener("click", () => {
+      $("src").value = ex.src;
+      $("tgt").value = ex.tgt;
+      input.value = ex.name;
+      run();
+      input.focus();
+    });
+    quick.appendChild(b);
+  }
+
+  // Map source-language strings to the engine's source_lang argument.
+  // Special case: "auto" maps to None.
+  function srcArg(v) {
+    return v === "auto" ? null : v;
+  }
+
+  function run() {
+    const name = input.value;
+    const src = $("src").value;
+    const tgt = $("tgt").value;
+    const givenFirst = $("given-first").checked;
+    if (!name.trim()) {
+      output.textContent = "…";
+      output.className = "value empty";
+      meta.textContent = "";
+      return;
+    }
+    let result;
+    try {
+      result = py_transliterate(name, tgt, srcArg(src), givenFirst ? "given-first" : "family-first");
+    } catch (e) {
+      output.textContent = "(error)";
+      output.className = "value null";
+      meta.textContent = "";
+      console.error(e);
+      return;
+    }
+    if (result === null || result === undefined) {
+      output.textContent = "None — engine can't romanize this deterministically";
+      output.className = "value null";
+      meta.textContent = "fail-soft";
+    } else {
+      output.textContent = String(result);
+      output.className = "value";
+      const detected = src === "auto" ? "auto" : src;
+      meta.textContent = `${detected} → ${tgt}`;
+    }
+  }
+
+  // Live update on input/option changes (debounced).
+  let timer;
+  const debounced = () => {
+    clearTimeout(timer);
+    timer = setTimeout(run, 200);
+  };
+  input.addEventListener("input", debounced);
+  $("src").addEventListener("change", run);
+  $("tgt").addEventListener("change", run);
+  $("given-first").addEventListener("change", run);
+})();
+</script>
+</body>
+</html>
