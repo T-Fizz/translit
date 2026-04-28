@@ -246,6 +246,104 @@ def _ru_to_latin(name: str) -> str | None:
     return " ".join(t.title() for t in text.split())
 
 
+# --- hi → latin (IAST via indic-transliteration + press-style fixups) -----
+
+# IAST → press-style ASCII mapping. The `indic-transliteration` lib emits
+# scholarly IAST with macrons (ā/ī/ū) and underdots (ṃ/ṛ/ṣ/ṇ); press writes
+# names without these (Rama, Krishna, Anjali — not Rāma, Kṛṣṇa, Aṃjalī).
+_IAST_TO_PRESS = {
+    # long vowels — drop the macron
+    "ā": "a", "ī": "i", "ū": "u", "ē": "e", "ō": "o",
+    # nasals → n
+    "ṃ": "n", "ṁ": "n", "ṅ": "n", "ñ": "n", "ṇ": "n",
+    # vocalic r/l → ri/li (Krishna, not Kṛṣṇa)
+    "ṛ": "ri", "ṝ": "ri", "ḷ": "li", "ḹ": "li",
+    # retroflex stops collapse to plain stops
+    "ṭ": "t", "ḍ": "d",
+    # visarga at end usually dropped in press
+    "ḥ": "",
+    # sibilants → sh (both palatal ś and retroflex ṣ)
+    "ś": "sh", "ṣ": "sh",
+    # IAST 'c' is the palatal stop /tʃ/ — written 'ch' in English press
+    # (Bachchan, Chandra, Charan). Applied last via the same .replace().
+    "c": "ch",
+}
+
+# Aspirated stops in IAST: paired consonant + 'h' representing one phoneme.
+# We don't want the schwa-delete cluster check to mistake them for two
+# consonants (otherwise अमिताभ → Amitabha instead of Amitabh).
+_IAST_ASPIRATE_FIRSTS = set("bdgjkptcḍṭ")
+
+
+def _hi_to_latin(name: str) -> str | None:
+    """Hindi (Devanagari) → Latin via IAST + press-style fixups.
+
+    Pipeline:
+      1. Run input through `indic_transliteration` to get IAST.
+      2. Replace IAST diacritics with their press-style ASCII equivalents.
+      3. Schwa-delete: drop word-final 'a' if preceded by exactly one
+         consonant (`rama → ram`, `raja → raj`). Keep 'a' after a
+         consonant cluster (`krishna` not `krishn`, `narendra` not
+         `narendr`) — the cluster signals the inherent vowel is
+         pronounced.
+      4. Title-case per word.
+    """
+    try:
+        from indic_transliteration import sanscript
+    except ImportError:
+        return None
+    if not name.strip():
+        return None
+    # Strip non-Devanagari, non-whitespace before the library sees the input.
+    # Otherwise punctuation (!, ., ।) and digits leak straight through to
+    # the IAST output (`राम! → 'rāma!'`).
+    cleaned = "".join(
+        c for c in name
+        if (0x0900 <= ord(c) <= 0x097F and not 0x0964 <= ord(c) <= 0x096F)
+        or c.isspace()
+    )
+    if not cleaned.strip():
+        return None
+    iast = sanscript.transliterate(cleaned, sanscript.DEVANAGARI, sanscript.IAST)
+    if not iast.strip():
+        return None
+    # Schwa-delete BEFORE diacritic stripping so we can distinguish the
+    # inherent vowel 'a' from the explicit long vowel 'ā'. After macron
+    # drop they'd look identical, but only the short 'a' (inherent schwa)
+    # gets deleted in modern Hindi pronunciation — सुनीता ends in long ā
+    # and stays as 'Sunita', not 'Sunit'.
+    iast_vowels = set("aeiouāīūēōṛṝḷḹ")
+    schwa_dropped: list[str] = []
+    for word in iast.split():
+        if len(word) >= 3 and word[-1] == "a":
+            prev = word[-2]
+            if prev not in iast_vowels:  # consonant before short final 'a'
+                # If 'h' is part of an aspirated digraph (bh/dh/gh/jh/etc.),
+                # treat the digraph as a single consonant unit when looking
+                # for clusters (otherwise अमिताभ → Amitabha not Amitabh).
+                aspirated = (
+                    prev == "h"
+                    and len(word) >= 3
+                    and word[-3] in _IAST_ASPIRATE_FIRSTS
+                )
+                cluster_check_idx = -4 if aspirated else -3
+                is_cluster = (
+                    len(word) >= -cluster_check_idx + 1
+                    and word[cluster_check_idx] not in iast_vowels
+                )
+                if not is_cluster:
+                    word = word[:-1]
+        if word:
+            schwa_dropped.append(word)
+    if not schwa_dropped:
+        return None
+    # Diacritic → press ASCII
+    text = " ".join(schwa_dropped)
+    for k, v in _IAST_TO_PRESS.items():
+        text = text.replace(k, v)
+    return " ".join(t.title() for t in text.split() if t)
+
+
 # --- en → katakana fallbacks (acronyms, punctuation handling) --------------
 
 _LETTER_TO_KATAKANA = {
@@ -650,6 +748,8 @@ def transliterate(
         return _ko_to_roman(name, name_order=name_order)
     if src == "ru":
         return _ru_to_latin(name)
+    if src == "hi":
+        return _hi_to_latin(name)
     return None
 
 
@@ -660,5 +760,6 @@ def supported_pairs() -> list[dict]:
         {"source": "zh", "target": "latin", "method": "pypinyin (no tones)"},
         {"source": "ko", "target": "latin", "method": "RR+traditional-surname-overlay"},
         {"source": "ru", "target": "latin", "method": "BGN/PCGN press-style"},
+        {"source": "hi", "target": "latin", "method": "IAST + press-style schwa-deletion"},
         {"source": "en", "target": "ja", "method": "alkana"},
     ]

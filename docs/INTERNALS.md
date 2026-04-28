@@ -310,7 +310,74 @@ returns None.
   (e.g., `Иван Сергеевич → Ivan Sergeevich`), which is the correct
   behavior anyway.
 
-## 8. The edge-case bestiary
+## 8. Hindi (Devanagari → Latin)
+
+Hindi is the first pair where we both use a library and post-process its
+output. `indic-transliteration` emits academic IAST (with macrons,
+underdots, vocalic-r). Press style demands ASCII without diacritics +
+**schwa deletion**. The pipeline:
+
+1. Strip non-Devanagari letters from input (filter danda U+0964, double
+   danda U+0965, Devanagari digits U+0966-U+096F).
+2. Run through `sanscript.transliterate(..., DEVANAGARI, IAST)` to get
+   IAST.
+3. Schwa-delete on IAST (before stripping diacritics, so `ā` and `a`
+   stay distinguishable): drop word-final inherent `a` if preceded by
+   exactly one consonant unit. Cluster preceding the `a` keeps it.
+4. Strip diacritics: `ā→a`, `ī→i`, `ū→u`, `ṃ/ṅ/ñ/ṇ→n`, `ṛ→ri`, `ṭ→t`,
+   `ḍ→d`, `ḥ→` (drop), `ś/ṣ→sh`, `c→ch`.
+5. Title-case per word.
+
+### Schwa deletion: where it bites
+
+Schwa deletion is the single biggest difference between IAST and
+press-style Hindi. Modern Hindi pronunciation deletes the inherent
+vowel `अ` (a) at the end of most words, but only when it follows a
+single consonant. Examples:
+
+| Input | IAST | After schwa-delete | After diacritic strip |
+|---|---|---|---|
+| राम (Rāma) | `rāma` | `rām` | `Ram` |
+| अमित | `amita` | `amit` | `Amit` |
+| सुनीता | `sunītā` | `sunītā` (last vowel is long ā, not schwa) | `Sunita` |
+| कृष्ण | `kṛṣṇa` | `kṛṣṇa` (cluster ṣṇ before the a) | `Krishna` |
+
+The cluster check is what keeps `Krishna` from becoming `Krishn` — the
+two-consonant cluster `ṣṇ` before the final `a` signals that the inherent
+vowel is pronounced.
+
+### Aspirated digraphs need special-casing
+
+IAST writes aspirated stops as digraphs: `bh`, `dh`, `gh`, `jh`, `kh`,
+`ph`, `th`, `ch`, `ḍh`, `ṭh`. They're two ASCII characters but a single
+phoneme. A naive "is the previous character a consonant?" cluster check
+mistakes them for clusters and over-preserves the schwa:
+
+```
+अमिताभ (Amitābh) → IAST 'amitābha'
+                 → naive: word[-3]='b' is a consonant → cluster → keep 'a' → 'Amitabha' ✗
+                 → correct: 'bh' is one consonant → check word[-4]='ā' (vowel) → no cluster → drop 'a' → 'Amitabh' ✓
+```
+
+The fix: when the consonant before final `a` is `h` and the character
+before THAT is in `{b,d,g,j,k,p,t,c,ḍ,ṭ}`, treat the digraph as one
+consonant and look one position further back for the cluster check.
+
+### Out of scope (deferred)
+
+- **Anusvara + h (ṃh) → "ngh"**. `सिंह` is universally written `Singh`
+  (Sikh surname), but our rules emit `Sinha` (which is also a real Hindi
+  surname). Recovering `Singh` needs a name-specific override.
+- **`ī → ee` press substitution**. Some names appear with double-`e`
+  in press (Deepika, Veer) instead of single-`i` (Dipika, Vir). Both
+  are common; we ship the single-letter form as the deterministic baseline.
+- **Schwa deletion is heuristic.** A pronunciation dictionary would
+  catch the ~10% of names where rules-based schwa-delete is wrong.
+- **Other Brahmic scripts** (Bengali, Tamil, Telugu, Gurmukhi). The
+  `indic-transliteration` lib supports them, but their conventions
+  differ enough that each needs its own pipeline.
+
+## 9. The edge-case bestiary
 
 Things we ran into during testing, and how each is handled.
 
@@ -452,7 +519,7 @@ in Japanese are already given-first by convention.
 Chinese pinyin output (`王明 → "Wang Ming"`) also follows family-first; a
 similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
-## 9. What you can rely on, what you can't
+## 10. What you can rely on, what you can't
 
 **Reliable:**
 - Common Japanese names (`pykakasi` covers the top several thousand).
@@ -464,6 +531,8 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Korean given names via Revised Romanization, press-style (`Kim Jong-un`).
 - Russian (Cyrillic) names via press-friendly BGN/PCGN — `Mikhail`,
   `Akhmatova`, `Fyodor`, `Yuryevich`.
+- Hindi (Devanagari) names via IAST + schwa-delete + diacritic strip —
+  `Amit`, `Krishna`, `Narendra Modi`, `Bachchan`.
 - Common English first/last names and loanwords from `alkana`.
 - Multi-word English names: whitespace + hyphen splitting, joined with `・`.
 - Round-trip katakana → Western name (`ヴィクター → "Victor"`).
@@ -490,7 +559,7 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Translation (use Azure or DeepL).
 - Languages other than ja/zh/ko/en for now.
 
-## 10. Why a service at all (over just `pip install pykakasi`)
+## 11. Why a service at all (over just `pip install pykakasi`)
 
 If your consumer is Python and you only need ja → en, **just install
 `pykakasi` directly.** A warm `pykakasi.kakasi().convert()` call is ~3μs;
@@ -510,7 +579,7 @@ The HTTP service in `app/` adds value over `translit_core` only when:
 
 Otherwise: `pip install -e /path/to/translit` and call the library directly.
 
-## 11. Where to look in the code
+## 12. Where to look in the code
 
 | Concern | File / function |
 |---|---|
@@ -525,6 +594,8 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 | Korean RR per-syllable table | [`translit_core/engine.py:_RR_INITIALS`](../translit_core/engine.py) |
 | ru → latin (BGN/PCGN press-style) | [`translit_core/engine.py:_ru_to_latin`](../translit_core/engine.py) |
 | Russian Cyrillic table + digraphs | [`translit_core/engine.py:_RU_MAP`](../translit_core/engine.py) |
+| hi → latin (IAST + schwa-delete) | [`translit_core/engine.py:_hi_to_latin`](../translit_core/engine.py) |
+| IAST → press-style fixup table | [`translit_core/engine.py:_IAST_TO_PRESS`](../translit_core/engine.py) |
 | Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
 | Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |
 | Honorific tests | [`tests/test_ja_honorifics.py`](../tests/test_ja_honorifics.py) |
