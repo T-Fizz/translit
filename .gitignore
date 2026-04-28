@@ -20,8 +20,11 @@ __pycache__/
 # Logs
 *.log
 
-# Takumi runtime state (config files like .takumi/TAKUMI.md remain tracked)
-.takumi/cache/
-.takumi/metrics.json
+# Takumi build-tool artifacts — local-only on main; tracked on the
+# main-with-takumi branch (see CLAUDE.md / .takumi for development tooling).
+.takumi/
+takumi.yaml
+takumi-pkg.yaml
+CLAUDE.md
 
 # Fly.io (fly.toml is tracked intentionally)
