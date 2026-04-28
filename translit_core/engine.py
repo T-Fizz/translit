@@ -172,6 +172,80 @@ def _is_all_katakana(s: str) -> bool:
     return seen
 
 
+# --- ru → latin (BGN/PCGN-style, name-friendly) ----------------------------
+
+# Press-friendly BGN/PCGN-style Cyrillic → Latin map. The standard library
+# alternatives (`transliterate`, `cyrtranslit`) lean scientific/GOST and
+# emit `j` for й, `h` for х, drop the y-glide on ё (Fedor instead of Fyodor),
+# and keep apostrophes for soft/hard signs. None of those match how Russian
+# names appear in English-language press, sports, or visa contexts. This
+# table is what newspapers actually print: Mikhail not Mihail, Akhmatova
+# not Ahmatova, Fyodor not Fedor, Olga not Ol'ga.
+_RU_MAP = {
+    "А": "A",  "Б": "B",  "В": "V",  "Г": "G",  "Д": "D",
+    "Е": "E",  "Ё": "Yo", "Ж": "Zh", "З": "Z",  "И": "I",
+    "Й": "Y",  "К": "K",  "Л": "L",  "М": "M",  "Н": "N",
+    "О": "O",  "П": "P",  "Р": "R",  "С": "S",  "Т": "T",
+    "У": "U",  "Ф": "F",  "Х": "Kh", "Ц": "Ts", "Ч": "Ch",
+    "Ш": "Sh", "Щ": "Shch", "Ъ": "", "Ы": "Y",  "Ь": "",
+    "Э": "E",  "Ю": "Yu", "Я": "Ya",
+    "а": "a",  "б": "b",  "в": "v",  "г": "g",  "д": "d",
+    "е": "e",  "ё": "yo", "ж": "zh", "з": "z",  "и": "i",
+    "й": "y",  "к": "k",  "л": "l",  "м": "m",  "н": "n",
+    "о": "o",  "п": "p",  "р": "r",  "с": "s",  "т": "t",
+    "у": "u",  "ф": "f",  "х": "kh", "ц": "ts", "ч": "ch",
+    "ш": "sh", "щ": "shch", "ъ": "", "ы": "y",  "ь": "",
+    "э": "e",  "ю": "yu", "я": "ya",
+}
+
+
+# Digraph fixups for ъ/ь + е — press writes 'ye' here even though strict
+# single-char drop-the-sign + е would give just 'e' (Yuryevich vs Yurevich,
+# Obyekt vs Obekt). ъё/ьё/ъя/ьа/ъю/ьу already work via single-char rules
+# because ё/я/ю already start with y.
+_RU_DIGRAPHS = {
+    "ъе": "ye", "Ъе": "Ye", "ъЕ": "yE", "ЪЕ": "YE",
+    "ье": "ye", "Ье": "Ye", "ьЕ": "yE", "ЬЕ": "YE",
+}
+
+
+def _ru_to_latin(name: str) -> str | None:
+    """Russian (Cyrillic) → Latin via press-friendly BGN/PCGN.
+
+    Internal whitespace and hyphens preserved. Non-Cyrillic letters
+    (e.g., Ukrainian Ї) cause a refusal — we don't transliterate
+    near-Cyrillic alphabets we haven't tabled. Digits / punctuation
+    are stripped (parallel to the JA path)."""
+    out: list[str] = []
+    i = 0
+    while i < len(name):
+        c = name[i]
+        # 2-char digraph (ъе/ье → ye) takes precedence over single-char drop
+        if i + 1 < len(name):
+            digraph = c + name[i + 1]
+            if digraph in _RU_DIGRAPHS:
+                out.append(_RU_DIGRAPHS[digraph])
+                i += 2
+                continue
+        roman = _RU_MAP.get(c)
+        if roman is not None:
+            out.append(roman)
+        elif c.isspace():
+            out.append(" ")
+        elif c == "-":
+            out.append("-")
+        elif c.isalpha():
+            return None  # non-Cyrillic letter — refuse rather than mix
+        # else: drop digits / punctuation
+        i += 1
+    text = "".join(out)
+    if not text.strip():
+        return None
+    # Title-case each whitespace-split token; .title() handles internal
+    # hyphens (Иван-Петров → Ivan-Petrov, not Ivan-petrov).
+    return " ".join(t.title() for t in text.split())
+
+
 # --- en → katakana fallbacks (acronyms, punctuation handling) --------------
 
 _LETTER_TO_KATAKANA = {
@@ -574,6 +648,8 @@ def transliterate(
         return _zh_to_pinyin(name)
     if src == "ko":
         return _ko_to_roman(name, name_order=name_order)
+    if src == "ru":
+        return _ru_to_latin(name)
     return None
 
 
@@ -583,5 +659,6 @@ def supported_pairs() -> list[dict]:
         {"source": "ja", "target": "latin", "method": "pykakasi+passport+honorifics"},
         {"source": "zh", "target": "latin", "method": "pypinyin (no tones)"},
         {"source": "ko", "target": "latin", "method": "RR+traditional-surname-overlay"},
+        {"source": "ru", "target": "latin", "method": "BGN/PCGN press-style"},
         {"source": "en", "target": "ja", "method": "alkana"},
     ]

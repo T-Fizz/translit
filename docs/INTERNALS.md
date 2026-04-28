@@ -259,7 +259,58 @@ honorifics with no name attached fall through to plain RR.
   (RR). The choice depends on individual preference and isn't
   recoverable from the Hangul alone. RR is the deterministic baseline.
 
-## 7. The edge-case bestiary
+## 7. Russian (Cyrillic → Latin)
+
+The standard Python libraries (`transliterate`, `cyrtranslit`) lean
+GOST/scientific style — `Sergej` instead of `Sergey`, `Mihail` instead
+of `Mikhail`, `Ahmatova` instead of `Akhmatova`, `Ol'ga` instead of
+`Olga`, and they sometimes strip the y-glide on ё (`Fedor` instead of
+`Fyodor`). None of those match how Russian names appear in
+English-language press, sports, or visa contexts. So Russian is, like
+Korean, an in-repo implementation: a 33-letter case-preserving map plus
+8 digraph rules, ~70 lines total.
+
+The map follows BGN/PCGN with the press-friendly tweaks that real
+newspapers print: `х → kh` (not `h`), ё-glide preserved (`Fyodor`,
+`Semyon`), soft/hard signs dropped (`Olga`, `Igor`).
+
+**Digraph rule for ъе/ье.** Strict per-char drop of ъ/ь followed by е
+gives plain `e` — but press writes `ye` here (`Obyekt`, `Yuryevich`).
+A small lookup of 8 cased pairs catches it before single-char dispatch:
+
+```python
+_RU_DIGRAPHS = {
+    "ъе": "ye", "Ъе": "Ye", "ъЕ": "yE", "ЪЕ": "YE",
+    "ье": "ye", "Ье": "Ye", "ьЕ": "yE", "ЬЕ": "YE",
+}
+```
+
+ъё/ьё/ъя/ьа/ъю/ью don't need digraph rules because ё/я/ю already start
+with a y in the base map.
+
+**Case handling.** Whatever case the input is (`ИВАН`, `иван`, `Иван`),
+the output is title-cased per word and per hyphen-delimited piece via
+Python's `str.title()` — `иван-петров → Ivan-Petrov`.
+
+**Refused inputs.** Letters from related Cyrillic alphabets we haven't
+tabled (Ukrainian Ї, Macedonian Ѓ, etc.) trigger a refusal rather than
+an emit-the-Cyrillic-as-itself fallback. Mixed Russian+Latin similarly
+returns None.
+
+**Out of scope (for now):**
+- **Word-initial Е → Ye.** BGN says word-initial е maps to "Ye" rather
+  than "E" (Yelena, Yevgeny, Yeltsin). The rule is contextual; press
+  applies it inconsistently. Strict-map gives `Elena`/`Evgeniy`/`Eltsin`
+  — defensible defaults, but not always what press would print.
+- **Ukrainian/Belarusian/Bulgarian/Macedonian Cyrillic.** Detection
+  groups all Cyrillic as `ru`; we'd need separate maps to handle
+  language-specific letters and conventions.
+- **Patronymic recognition.** We don't detect Russian patronymics as
+  honorific-like suffixes — they get romanized as part of the name
+  (e.g., `Иван Сергеевич → Ivan Sergeevich`), which is the correct
+  behavior anyway.
+
+## 8. The edge-case bestiary
 
 Things we ran into during testing, and how each is handled.
 
@@ -401,7 +452,7 @@ in Japanese are already given-first by convention.
 Chinese pinyin output (`王明 → "Wang Ming"`) also follows family-first; a
 similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 
-## 8. What you can rely on, what you can't
+## 9. What you can rely on, what you can't
 
 **Reliable:**
 - Common Japanese names (`pykakasi` covers the top several thousand).
@@ -411,6 +462,8 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Common Korean names with traditional surname spellings (Kim/Lee/Park/etc.,
   ~36 surnames covering ~85% of the population).
 - Korean given names via Revised Romanization, press-style (`Kim Jong-un`).
+- Russian (Cyrillic) names via press-friendly BGN/PCGN — `Mikhail`,
+  `Akhmatova`, `Fyodor`, `Yuryevich`.
 - Common English first/last names and loanwords from `alkana`.
 - Multi-word English names: whitespace + hyphen splitting, joined with `・`.
 - Round-trip katakana → Western name (`ヴィクター → "Victor"`).
@@ -437,7 +490,7 @@ similar swap for `_zh_to_pinyin` could land in v1.1 if needed.
 - Translation (use Azure or DeepL).
 - Languages other than ja/zh/ko/en for now.
 
-## 9. Why a service at all (over just `pip install pykakasi`)
+## 10. Why a service at all (over just `pip install pykakasi`)
 
 If your consumer is Python and you only need ja → en, **just install
 `pykakasi` directly.** A warm `pykakasi.kakasi().convert()` call is ~3μs;
@@ -457,7 +510,7 @@ The HTTP service in `app/` adds value over `translit_core` only when:
 
 Otherwise: `pip install -e /path/to/translit` and call the library directly.
 
-## 10. Where to look in the code
+## 11. Where to look in the code
 
 | Concern | File / function |
 |---|---|
@@ -470,6 +523,8 @@ Otherwise: `pip install -e /path/to/translit` and call the library directly.
 | ko → roman + surname overlay | [`translit_core/engine.py:_ko_to_roman`](../translit_core/engine.py) |
 | Korean honorific dictionary | [`translit_core/engine.py:_KO_HONORIFICS_RAW`](../translit_core/engine.py) |
 | Korean RR per-syllable table | [`translit_core/engine.py:_RR_INITIALS`](../translit_core/engine.py) |
+| ru → latin (BGN/PCGN press-style) | [`translit_core/engine.py:_ru_to_latin`](../translit_core/engine.py) |
+| Russian Cyrillic table + digraphs | [`translit_core/engine.py:_RU_MAP`](../translit_core/engine.py) |
 | Coverage / silent-dropout check | [`translit_core/engine.py`](../translit_core/engine.py) (search for `input_alpha`) |
 | Edge-case regression tests | [`tests/test_edge_cases.py`](../tests/test_edge_cases.py) |
 | Honorific tests | [`tests/test_ja_honorifics.py`](../tests/test_ja_honorifics.py) |
