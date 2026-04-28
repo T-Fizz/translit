@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>translit — name-aware transliteration</title>
+<meta name="description" content="A small Python library for name-aware transliteration across Japanese, Chinese, Korean, Russian, Hindi, Arabic, Thai, and English.">
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --fg-muted: #666;
+    --fg-subtle: #999;
+    --bg: #fafafa;
+    --bg-code: #f0f0f0;
+    --bg-sub: #fff;
+    --border: #e0e0e0;
+    --accent: #0066cc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e8e8e8;
+      --fg-muted: #999;
+      --fg-subtle: #666;
+      --bg: #0d0d0d;
+      --bg-code: #1a1a1a;
+      --bg-sub: #161616;
+      --border: #2a2a2a;
+      --accent: #5c9eff;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 4rem 1.5rem 6rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.5rem;
+  }
+  h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 3rem 0 1rem;
+    color: var(--fg);
+    letter-spacing: -0.005em;
+  }
+  p { margin: 0 0 1rem; }
+  .tagline { color: var(--fg-muted); font-size: 1.05rem; margin: 0 0 2rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    margin: 0 0 1.5rem;
+    line-height: 1.5;
+  }
+  code { color: var(--fg); }
+  pre code { background: none; padding: 0; }
+  :not(pre) > code {
+    background: var(--bg-code);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  .pairs {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+  }
+  .pairs th, .pairs td {
+    text-align: left;
+    padding: 0.65rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .pairs th {
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+  }
+  .pairs td:first-child { color: var(--fg-muted); white-space: nowrap; }
+  .pairs td.input { font-family: ui-monospace, monospace; }
+  .pairs td.arrow { color: var(--fg-subtle); padding: 0.65rem 0.2rem; }
+  .pairs td.output { font-family: ui-monospace, monospace; }
+  .pairs td.note { color: var(--fg-subtle); font-size: 0.85em; }
+
+  .examples {
+    background: var(--bg-sub);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 0 0 1.25rem;
+  }
+  .examples h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-subtle);
+  }
+  .examples h3 .pair { color: var(--fg); text-transform: none; letter-spacing: 0; font-size: 1rem; font-weight: 600; }
+  .examples ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9rem;
+  }
+  .examples li {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.2rem 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .examples li > .src { min-width: 14ch; color: var(--fg); }
+  .examples li > .arrow { color: var(--fg-subtle); }
+  .examples li > .dst { color: var(--accent); }
+  .examples li > .note { color: var(--fg-subtle); font-size: 0.85em; flex: 1 1 100%; padding-left: 14.6ch; margin-top: -0.1em; }
+  .examples p.detail { color: var(--fg-muted); font-size: 0.85rem; margin: 0.5rem 0 0; }
+
+  .pill {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0.1em 0.5em;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+    margin-left: 0.5em;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  ul.flat { padding-left: 1.25rem; margin: 0 0 1rem; }
+  ul.flat li { margin: 0.25rem 0; }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4rem 0 2rem;
+  }
+  footer {
+    color: var(--fg-subtle);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  footer a { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>translit</h1>
+  <p class="tagline">A small Python library for <strong>name-aware</strong> transliteration. Eight language pairs. <a href="https://github.com/T-Fizz/translit">github.com/T-Fizz/translit</a></p>
+
+  <h2>Install</h2>
+  <pre><code>pip install -e git+https://github.com/T-Fizz/translit.git#egg=translit-core</code></pre>
+
+  <h2>Use</h2>
+  <pre><code>from translit_core import transliterate
+
+transliterate("カナちゃん", "en")                              # → "Kana-chan"
+transliterate("山田太郎", "en", source_lang="ja")              # → "Yamada Taro"
+transliterate("山田太郎", "en", source_lang="ja",
+              name_order="given-first")                      # → "Taro Yamada"
+transliterate("김정은", "en", source_lang="ko")                # → "Kim Jeong-eun"
+transliterate("Иван Сергеевич Тургенев", "en")                # → "Ivan Sergeevich Turgenev"
+transliterate("नरेंद्र मोदी", "en", source_lang="hi")           # → "Narendra Modi"
+transliterate("عبد الرحمن", "en", source_lang="ar")            # → "Abdul-Rahman"
+transliterate("ทักษิณ", "en", source_lang="th")               # → "Thaksin"
+transliterate("John Smith", "ja")                              # → "ジョン・スミス"</code></pre>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem;">Returns <code>None</code> when the engine can't deterministically romanize an input. Fail-soft: callers see a clear signal, never a half-translated guess.</p>
+
+  <h2>Supported pairs</h2>
+  <table class="pairs">
+    <tr>
+      <th>Source</th>
+      <th>Target</th>
+      <th>Method</th>
+    </tr>
+    <tr>
+      <td>Japanese (kana + kanji)</td>
+      <td>Latin</td>
+      <td class="note">pykakasi passport-style + 22 honorifics + reverse-katakana round-trip</td>
+    </tr>
+    <tr>
+      <td>Chinese (Hanzi)</td>
+      <td>Latin</td>
+      <td class="note">pypinyin (no tones)</td>
+    </tr>
+    <tr>
+      <td>Korean (Hangul)</td>
+      <td>Latin</td>
+      <td class="note">RR + 36-name surname overlay + 3 honorifics</td>
+    </tr>
+    <tr>
+      <td>Russian (Cyrillic)</td>
+      <td>Latin</td>
+      <td class="note">BGN/PCGN press-style</td>
+    </tr>
+    <tr>
+      <td>Hindi (Devanagari)</td>
+      <td>Latin</td>
+      <td class="note">IAST + diacritic strip + schwa deletion</td>
+    </tr>
+    <tr>
+      <td>Arabic</td>
+      <td>Latin</td>
+      <td class="note">Curated 50-name overlay</td>
+    </tr>
+    <tr>
+      <td>Thai</td>
+      <td>Latin</td>
+      <td class="note">RTGS via pythainlp</td>
+    </tr>
+    <tr>
+      <td>English (Latin)</td>
+      <td>Japanese (katakana)</td>
+      <td class="note">alkana + acronym fallback</td>
+    </tr>
+  </table>
+
+  <h2>Examples</h2>
+
+  <div class="examples">
+    <h3><span class="pair">ja → en</span> <span class="pill">honorifics</span> <span class="pill">passport hepburn</span></h3>
+    <ul>
+      <li><span class="src">カナちゃん</span> <span class="arrow">→</span> <span class="dst">Kana-chan</span></li>
+      <li><span class="src">山田太郎</span> <span class="arrow">→</span> <span class="dst">Yamada Taro</span></li>
+      <li><span class="src">田中先生</span> <span class="arrow">→</span> <span class="dst">Tanaka-sensei</span></li>
+      <li><span class="src">兄ちゃん</span> <span class="arrow">→</span> <span class="dst">Niichan</span></li>
+      <li><span class="src">ヴィクター</span> <span class="arrow">→</span> <span class="dst">Victor</span> <span class="note">round-trip via reverse-alkana</span></li>
+    </ul>
+  </div>
+
+  <div class="examples">
+    <h3><span class="pair">ko → en</span> <span class="pill">surname overlay</span> <span class="pill">press style</span></h3>
+    <ul>
+      <li><span class="src">김정은</span> <span class="arrow">→</span> <span class="dst">Kim Jeong-eun</span></li>
+      <li><span class="src">박지성</span> <span class="arrow">→</span> <span class="dst">Park Ji-seong</span></li>
+      <li><span class="src">문재인</span> <span class="arrow">→</span> <span class="dst">Moon Jae-in</span></li>
+      <li><span class="src">남궁민</span> <span class="arrow">→</span> <span class="dst">Namgoong Min</span> <span class="note">2-syllable family</span></li>
+      <li><span class="src">박지성씨</span> <span class="arrow">→</span> <span class="dst">Park Ji-seong-ssi</span></li>
+    </ul>
+  </div>
+
+  <div class="examples">
+    <h3><span class="pair">ru → en</span> <span class="pill">BGN/PCGN</span></h3>
+    <ul>
+      <li><span class="src">Иван Сергеевич</span> <span class="arrow">→</span> <span class="dst">Ivan Sergeevich</span></li>
+      <li><span class="src">Михаил Ахматова</span> <span class="arrow">→</span> <span class="dst">Mikhail Akhmatova</span> <span class="note">х → kh, not h</span></li>
+      <li><span class="src">Фёдор Семён</span> <span class="arrow">→</span> <span class="dst">Fyodor Semyon</span> <span class="note">ё-glide preserved</span></li>
+      <li><span class="src">Ольга Объект</span> <span class="arrow">→</span> <span class="dst">Olga Obyekt</span></li>
+    </ul>
+  </div>
+
+  <div class="examples">
+    <h3><span class="pair">hi → en</span> <span class="pill">schwa deletion</span></h3>
+    <ul>
+      <li><span class="src">अमित</span> <span class="arrow">→</span> <span class="dst">Amit</span></li>
+      <li><span class="src">कृष्ण</span> <span class="arrow">→</span> <span class="dst">Krishna</span> <span class="note">cluster keeps schwa</span></li>
+      <li><span class="src">अमिताभ बच्चन</span> <span class="arrow">→</span> <span class="dst">Amitabh Bachchan</span></li>
+      <li><span class="src">सुनीता</span> <span class="arrow">→</span> <span class="dst">Sunita</span> <span class="note">long ā kept distinct from schwa</span></li>
+      <li><span class="src">नरेंद्र मोदी</span> <span class="arrow">→</span> <span class="dst">Narendra Modi</span></li>
+    </ul>
+  </div>
+
+  <div class="examples">
+    <h3><span class="pair">ar → en</span> <span class="pill">curated overlay</span></h3>
+    <ul>
+      <li><span class="src">محمد</span> <span class="arrow">→</span> <span class="dst">Muhammad</span></li>
+      <li><span class="src">فاطمة</span> <span class="arrow">→</span> <span class="dst">Fatima</span></li>
+      <li><span class="src">عبد الرحمن</span> <span class="arrow">→</span> <span class="dst">Abdul-Rahman</span> <span class="note">multi-token compound</span></li>
+      <li><span class="src">مُحَمَّد</span> <span class="arrow">→</span> <span class="dst">Muhammad</span> <span class="note">tashkeel stripped</span></li>
+    </ul>
+  </div>
+
+  <div class="examples">
+    <h3><span class="pair">th → en</span> <span class="pill">RTGS</span></h3>
+    <ul>
+      <li><span class="src">สมชาย</span> <span class="arrow">→</span> <span class="dst">Somchai</span></li>
+      <li><span class="src">ทักษิณ</span> <span class="arrow">→</span> <span class="dst">Thaksin</span></li>
+      <li><span class="src">ประยุทธ์</span> <span class="arrow">→</span> <span class="dst">Prayut</span></li>
+      <li><span class="src">เพื่อน</span> <span class="arrow">→</span> <span class="dst">Phuean</span> <span class="note">vowel reordered around the consonant</span></li>
+    </ul>
+  </div>
+
+  <div class="examples">
+    <h3><span class="pair">en → ja</span> <span class="pill">alkana</span> <span class="pill">acronym fallback</span></h3>
+    <ul>
+      <li><span class="src">John</span> <span class="arrow">→</span> <span class="dst">ジョン</span></li>
+      <li><span class="src">John Smith</span> <span class="arrow">→</span> <span class="dst">ジョン・スミス</span></li>
+      <li><span class="src">Mary-Jane</span> <span class="arrow">→</span> <span class="dst">メアリー・ジェイン</span></li>
+      <li><span class="src">Mr. Smith</span> <span class="arrow">→</span> <span class="dst">ミスター・スミス</span></li>
+      <li><span class="src">FBI</span> <span class="arrow">→</span> <span class="dst">エフビーアイ</span> <span class="note">letter-by-letter for unknown acronyms</span></li>
+    </ul>
+  </div>
+
+  <h2>What it handles</h2>
+  <ul class="flat">
+    <li>Japanese honorifics including compounds (<code>ちゃん</code>, <code>先生</code>, <code>兄ちゃん</code>, <code>にゃん</code>)</li>
+    <li>CJK source disambiguation (<code>田中</code> → Tanaka if ja, Tian Zhong if zh)</li>
+    <li>Multi-kanji morpheme splitting (<code>山田太郎</code> → "Yamada Taro")</li>
+    <li>Round-trip katakana → Western name (<code>ヴィクター</code> → "Victor")</li>
+    <li>Korean traditional surname spellings (Kim/Lee/Park, not Gim/I/Bak)</li>
+    <li>Korean 2-syllable family names (남궁/황보/사공/제갈/선우/독고)</li>
+    <li>Russian press-style (Mikhail not Mihail, Fyodor not Fedor, ъе/ье → ye)</li>
+    <li>Hindi schwa deletion with cluster + aspirated-digraph awareness</li>
+    <li>Arabic input normalization: tashkeel, alif variants, tatweel, Allah ligature</li>
+    <li>Half-width katakana / full-width Latin (NFKC)</li>
+    <li>Punctuation stripping, silent-character dropout detection</li>
+    <li>Family-first vs given-first name ordering (<code>name_order=</code>)</li>
+  </ul>
+
+  <h2>Why a library, not just a service</h2>
+  <p>An in-process call is ~3μs warm. An HTTP roundtrip is at least four orders of magnitude slower. If your consumer is Python, just import the library directly. The repo also ships a FastAPI service (<code>app/</code>) for the case where the consumer isn't Python or where multiple apps need a shared cache.</p>
+
+  <h2>Read more</h2>
+  <ul class="flat">
+    <li><a href="https://github.com/T-Fizz/translit/blob/main/docs/INTERNALS.md">INTERNALS.md</a> — the deep dive: every edge case, why each library was picked or discarded, what each pair handles and what it can't</li>
+    <li><a href="https://github.com/T-Fizz/translit/blob/main/docs/DESIGN.md">DESIGN.md</a> — architecture and API contract for the optional FastAPI service</li>
+    <li><a href="https://github.com/T-Fizz/translit/blob/main/docs/TENETS.md">TENETS.md</a> — the principles behind the deterministic-and-fail-soft choices</li>
+  </ul>
+
+  <hr>
+  <footer>
+    <a href="https://github.com/T-Fizz/translit">github.com/T-Fizz/translit</a> · MIT
+  </footer>
+
+</main>
+</body>
+</html>

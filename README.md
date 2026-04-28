@@ -5,6 +5,8 @@ target language, get back a readable romanization — with Japanese
 honorifics, Chinese name spacing, and kanji source-language
 disambiguation handled correctly.
 
+**Demo:** [t-fizz.github.io/translit](https://t-fizz.github.io/translit/)
+
 ## Quick start
 
 ```bash
