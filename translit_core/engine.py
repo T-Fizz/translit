@@ -574,21 +574,83 @@ def _ja_to_romaji(
     name = "".join(c for c in _normalize(name) if c.isalpha() or c == "・")
     if not name:
         return None
-    honorific_roman = ""
-    stem = name
     tail_hira = _katakana_to_hiragana(name)
+
+    # Pass 1: exact-match compound honorifics ('ちゃん' alone, '兄ちゃん',
+    # 'にいさん', etc.) — return the dictionary's roman form directly.
     for suffix, roman in _JA_HONORIFICS:
         sfx_hira = _katakana_to_hiragana(suffix)
-        if not tail_hira.endswith(sfx_hira):
-            continue
-        if len(stem) == len(suffix):
-            # Whole input is the honorific/compound term — use its roman form
-            # directly (no stem, no leading hyphen).
+        if tail_hira.endswith(sfx_hira) and len(name) == len(suffix):
             return roman.lstrip("-").capitalize()
-        if len(stem) > len(suffix):
+
+    # Pass 2: colloquial-nickname recognition. When the character right
+    # before a recognized honorific suffix is a small tsu (っ/ッ), the
+    # input is a geminated nickname like いっちゃん / はっちゃん / ろっちゃん
+    # where splitting at the honorific boundary would destroy the
+    # geminate. In those cases, use pykakasi's whole-input romanization
+    # (e.g., "itchan", "hatchan", "rotchan") directly. The small-tsu
+    # check makes this narrow enough to avoid false positives like
+    # たなかりん → 'Tanakarin' (no geminate, should be 'Tanaka-rin').
+    k = pykakasi.kakasi()
+    for _suf, _roman in _JA_HONORIFICS:
+        _sfx_hira = _katakana_to_hiragana(_suf)
+        if not (tail_hira.endswith(_sfx_hira) and len(name) > len(_suf)):
+            continue
+        _char_before = name[-len(_suf) - 1]
+        if _char_before not in ("っ", "ッ"):
+            continue
+        # Fold katakana → hiragana before pykakasi so script changes don't
+        # split the geminate (カッちゃん is 2 tokens, but かっちゃん is one).
+        full_parts = k.convert(_katakana_to_hiragana(name))
+        if len(full_parts) == 1:
+            t = full_parts[0]["passport"]
+            if t and t.strip():
+                if t.endswith("ou"):
+                    t = t[:-2] + "o"
+                elif t.endswith("uu"):
+                    t = t[:-2] + "u"
+                _rno = _roman.lstrip("-").lower()
+                if t.lower().endswith(_rno) and len(t) > len(_rno):
+                    return t.capitalize()
+        break  # only consider the longest matching suffix
+
+    # Pass 3: standard honorific-strip (split name + honorific)
+    honorific_roman = ""
+    stem = name
+    for suffix, roman in _JA_HONORIFICS:
+        sfx_hira = _katakana_to_hiragana(suffix)
+        if tail_hira.endswith(sfx_hira) and len(stem) > len(suffix):
             stem = stem[:-len(suffix)]
             honorific_roman = roman
             break
+
+    # Pass 4: nickname-gemination heuristic for single-kanji + ちゃん.
+    # Colloquial Japanese geminates a stop-ending kanji reading with the
+    # following ち of ちゃん: 一 (ichi) + ちゃん → いっちゃん → Itchan;
+    # 八 (hachi) + ちゃん → はっちゃん → Hatchan; 律 (ritsu) + ちゃん →
+    # りっちゃん → Ritchan; 六 (roku) + ちゃん → ろっちゃん → Rotchan.
+    # Triggers only when the stripped stem is exactly one kanji whose
+    # passport reading ends in chi/tsu/ku — narrow enough to avoid
+    # false positives on names like 美ちゃん (bi → 'Bi-chan', no gemination).
+    if (
+        honorific_roman == "-chan"
+        and len(stem) == 1
+        and 0x4E00 <= ord(stem[0]) <= 0x9FFF
+    ):
+        _sp = k.convert(stem)
+        if _sp:
+            _r = _sp[0]["passport"]
+            if _r.endswith("ou"):
+                _r = _r[:-2] + "o"
+            elif _r.endswith("uu"):
+                _r = _r[:-2] + "u"
+            _gem = None
+            if _r.endswith("chi") or _r.endswith("tsu"):
+                _gem = _r[:-3] + "t"
+            elif _r.endswith("ku"):
+                _gem = _r[:-2] + "t"
+            if _gem is not None:
+                return _gem.capitalize() + "chan"
 
     # Round-trip path: if the stem is pure katakana (with optional ・ or ー),
     # try recovering the original Western spelling from reverse-alkana
