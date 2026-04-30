@@ -719,11 +719,192 @@ def _en_phonetic_to_katakana(word: str) -> str | None:
     return "".join(out) if out else None
 
 
-def _alkana_lookup(word: str) -> str | None:
-    """Look up an English word in alkana with progressive cleanup.
+"""ARPABET → katakana mappings for the optional CMU-dict-backed pipeline.
 
-    Tries: exact match → trailing-punctuation-stripped → acronym fallback
-    → best-effort phonetic en → katakana fallback (any unknown word).
+The `cmudict` package (an optional `[full]` install) provides ~126k English
+words mapped to their ARPABET phoneme sequences. This table maps those
+phonemes to katakana — much higher quality than the orthographic fallback
+because vowel quality (the /ɔ/ in 'water', not the /a/ from spelling) is
+encoded in the phonemes.
+
+Each ARPABET vowel decomposes into (consonant_vowel_row_index, tail). When
+a consonant precedes the vowel, the consonant's row table is indexed at
+`row_index` to form a CV katakana, then `tail` is appended. Long vowels
+(AA/AO/IY/UW) and the rhotic ER carry a 'ー' tail. Diphthongs (AY/AW/EY/OW/OY)
+carry a second small kana tail (アイ/アウ/エイ/オウ/オイ).
+"""
+_ARPABET_VOWEL = {
+    "AA": (0, "ー"),    # /ɑː/ father    → アー
+    "AE": (0, ""),      # /æ/ cat        → ア
+    "AH": (0, ""),      # /ʌ/ cup, schwa → ア
+    "AO": (4, "ー"),    # /ɔː/ caught    → オー
+    "AW": (0, "ウ"),    # /aʊ/ cow       → アウ
+    "AY": (0, "イ"),    # /aɪ/ kite      → アイ
+    "EH": (3, ""),      # /ɛ/ red        → エ
+    "ER": (0, "ー"),    # /ɝ/ her        → アー (rhotic, no separate r)
+    "EY": (3, "イ"),    # /eɪ/ say       → エイ
+    "IH": (1, ""),      # /ɪ/ sit        → イ
+    "IY": (1, "ー"),    # /iː/ see       → イー
+    "OW": (4, "ウ"),    # /oʊ/ boat      → オウ
+    "OY": (4, "イ"),    # /ɔɪ/ boy       → オイ
+    "UH": (2, ""),      # /ʊ/ book       → ウ
+    "UW": (2, "ー"),    # /uː/ boot      → ウー
+}
+
+_ARPABET_VOWEL_STANDALONE = {
+    "AA": "アー", "AE": "ア", "AH": "ア", "AO": "オー",
+    "AW": "アウ", "AY": "アイ", "EH": "エ", "ER": "アー",
+    "EY": "エイ", "IH": "イ", "IY": "イー", "OW": "オウ",
+    "OY": "オイ", "UH": "ウ", "UW": "ウー",
+}
+
+_ARPABET_CONSONANT_CV = {
+    "B": _KATA_CV["b"],
+    "CH": _KATA_DIGRAPH_CV["ch"],
+    "D": _KATA_CV["d"],
+    "DH": _KATA_CV["z"],   # voiced th → z-row (this/that approximation)
+    "F": _KATA_CV["f"],
+    "G": _KATA_CV["g"],
+    "HH": _KATA_CV["h"],
+    "JH": _KATA_CV["j"],
+    "K": _KATA_CV["k"],
+    "L": _KATA_CV["r"],    # English L → r-row in Japanese
+    "M": _KATA_CV["m"],
+    "N": _KATA_CV["n"],
+    "P": _KATA_CV["p"],
+    "R": _KATA_CV["r"],
+    "S": _KATA_CV["s"],
+    "SH": _KATA_DIGRAPH_CV["sh"],
+    "T": _KATA_CV["t"],
+    "TH": ("サ", "シ", "ス", "セ", "ソ"),  # voiceless th → s-row
+    "V": _KATA_CV["v"],
+    "W": _KATA_CV["w"],
+    "Y": _KATA_CV["y"],
+    "Z": _KATA_CV["z"],
+    "ZH": _KATA_DIGRAPH_CV["ch"],   # /ʒ/ approximated to ch row
+}
+
+_ARPABET_CONSONANT_BARE = {
+    "B": "ブ", "CH": "チ", "D": "ド", "DH": "ズ",
+    "F": "フ", "G": "グ", "HH": "フ", "JH": "ジ",
+    "K": "ク", "L": "ル", "M": "ム", "N": "ン",
+    "NG": "ング", "P": "プ", "R": "ル", "S": "ス",
+    "SH": "シュ", "T": "ト", "TH": "ス", "V": "ヴ",
+    "W": "ウ", "Y": "イ", "Z": "ズ", "ZH": "ジ",
+}
+
+
+def _arpabet_to_katakana(phones: list[str]) -> str | None:
+    """Walk an ARPABET phoneme list, building consonant-vowel katakana
+    syllables. Stress markers (the digit at end of vowels) are stripped.
+    Special cases: T+S cluster → ッツ (Fitz, Schwartz)."""
+    phones = [p.rstrip("0123456789") for p in phones]
+    if not phones:
+        return None
+    out: list[str] = []
+    i = 0
+    n = len(phones)
+    while i < n:
+        p = phones[i]
+        nxt = phones[i + 1] if i + 1 < n else None
+        prev = phones[i - 1] if i > 0 else None
+
+        # Silent rhotic R: post-vowel R in English is absorbed into the
+        # preceding vowel (the long-mark 'ー' tail handles it). Schwartz
+        # /SH W AO R T S/ is シュワーツ not シュワールツ; Park /P AA R K/
+        # is パーク not パールク. ER as a single phoneme is unaffected
+        # — it already encodes its own rhoticity.
+        if p == "R" and prev in _ARPABET_VOWEL and prev != "ER":
+            i += 1
+            continue
+
+        # T+S cluster → ッツ (geminate ts, e.g., Fitzwater, Schwartz)
+        if p == "T" and nxt == "S":
+            nxt2 = phones[i + 2] if i + 2 < n else None
+            if nxt2 in _ARPABET_VOWEL:
+                idx, tail = _ARPABET_VOWEL[nxt2]
+                # ッ + ツ-row syllable for the (T)S+vowel
+                ts_row = _KATA_DIGRAPH_CV["ts"]
+                out.append("ッ" + ts_row[idx])
+                if tail:
+                    out.append(tail)
+                i += 3
+                continue
+            out.append("ッツ")
+            i += 2
+            continue
+
+        # Standalone vowel
+        if p in _ARPABET_VOWEL:
+            out.append(_ARPABET_VOWEL_STANDALONE[p])
+            i += 1
+            continue
+
+        # Consonant + vowel
+        if p in _ARPABET_CONSONANT_CV and nxt in _ARPABET_VOWEL:
+            idx, tail = _ARPABET_VOWEL[nxt]
+            out.append(_ARPABET_CONSONANT_CV[p][idx])
+            if tail:
+                out.append(tail)
+            i += 2
+            continue
+
+        # Bare consonant (cluster or word-end position)
+        if p in _ARPABET_CONSONANT_BARE:
+            out.append(_ARPABET_CONSONANT_BARE[p])
+            i += 1
+            continue
+
+        # Unknown phoneme — skip
+        i += 1
+
+    return "".join(out) if out else None
+
+
+# Cached cmudict lookup. The cmudict module is optional (in `[full]` extra);
+# absence is silently handled by skipping this pipeline stage.
+_CMU_DICT: dict | None = None
+_CMU_LOAD_TRIED = False
+
+
+def _en_cmudict_to_katakana(word: str) -> str | None:
+    """Look up `word` in the CMU Pronouncing Dictionary, then map ARPABET
+    phonemes to katakana. Returns None when cmudict isn't installed,
+    when the word isn't in the dictionary, or on conversion failure.
+
+    Pure Python; works under Pyodide if `cmudict` is available via
+    micropip. Default `pip install translit-core` does NOT include this;
+    `pip install translit-core[full]` does."""
+    global _CMU_DICT, _CMU_LOAD_TRIED
+    if _CMU_DICT is None and not _CMU_LOAD_TRIED:
+        _CMU_LOAD_TRIED = True
+        try:
+            import cmudict
+            _CMU_DICT = cmudict.dict()
+        except ImportError:
+            return None
+    if _CMU_DICT is None:
+        return None
+    # Single letters are too ambiguous (letter name vs vowel sound vs
+    # pronoun). Match the orthographic-fallback policy.
+    if len(word) < 2:
+        return None
+    entries = _CMU_DICT.get(word.lower())
+    if not entries:
+        return None
+    # Pick the first pronunciation variant deterministically.
+    return _arpabet_to_katakana(list(entries[0]))
+
+
+def _alkana_lookup(word: str) -> str | None:
+    """Look up an English word with progressive fallbacks.
+
+    Pipeline:
+      1. alkana exact (high-quality, name-tuned ~49k entries)
+      2. trailing-punct strip + retry
+      3. acronym fallback (FBI → エフビーアイ)
+      4. CMU dict → ARPABET → katakana (only if `cmudict` is installed)
+      5. orthographic fallback (always available, lower quality)
     """
     try:
         import alkana
@@ -741,6 +922,10 @@ def _alkana_lookup(word: str) -> str | None:
     acronym = _en_acronym_to_katakana(word)
     if acronym is not None:
         return acronym
+    # Phoneme-based fallback (only fires when [full] extra is installed)
+    cmu = _en_cmudict_to_katakana(word)
+    if cmu is not None:
+        return cmu
     # Last-ditch: orthographic phonetic fallback. Quality varies but
     # produces a readable katakana for any ASCII English input.
     return _en_phonetic_to_katakana(word)

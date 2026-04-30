@@ -95,6 +95,49 @@ def test_apostrophe_names_handled_via_fallback():
     assert transliterate("O'Brien", "ja") is not None
 
 
+# --- CMU-dict-backed phoneme pipeline (gated on `[full]` extra) ------------
+
+cmudict = pytest.importorskip("cmudict")
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        # These all hit CMU dict, then ARPABET → katakana. Output should
+        # match standard press transliteration (vowel quality recovered
+        # from the phoneme, not guessed from spelling).
+        ("Fitzwater", "フィッツウォーター"),
+        ("Walker", "ウォーカー"),
+        ("Thompson", "トンプソン"),
+        ("Knight", "ナイト"),
+        ("Park", "パーク"),
+        ("Carter", "カーター"),
+        ("Phoenix", "フェニックス"),
+        ("Stockton", "ストックトン"),
+        ("George", "ジョージ"),
+        ("Cynthia", "シンシア"),
+        ("Roosevelt", "ルーズベルト"),
+    ],
+)
+def test_cmudict_phoneme_pipeline(name, expected):
+    """Press-quality output for English names not in alkana (or whose
+    alkana entry differs). Requires `pip install translit-core[full]`."""
+    assert transliterate(name, "ja") == expected
+
+
+def test_cmudict_silent_rhotic_r():
+    """Post-vowel R is absorbed into the preceding vowel via the long
+    mark — not emitted as a separate ル. Park → パーク, not パールク."""
+    assert transliterate("Park", "ja") == "パーク"
+    assert transliterate("Carter", "ja") == "カーター"
+
+
+def test_cmudict_ts_cluster_geminate():
+    """T+S phoneme cluster renders as ッツ (geminate ts). Fitzwater /F IH T S
+    W AO T ER/ → フィッ + ツ + ウォー + ター = フィッツウォーター."""
+    assert transliterate("Fitzwater", "ja") == "フィッツウォーター"
+
+
 # --- Diacritics still excluded ---------------------------------------------
 
 @pytest.mark.parametrize("name", ["Müller", "café"])

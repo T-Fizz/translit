@@ -12,7 +12,13 @@ Hindi schwa deletion, and more.
 ## Quick start (library)
 
 ```bash
+# Default install — light bundle, orthographic en→ja fallback
 pip install -e git+https://github.com/T-Fizz/translit.git#egg=translit-core
+
+# Backend-service install — adds CMU Pronouncing Dictionary (~3 MB) for
+# press-quality en→ja phoneme lookups (Fitzwater → フィッツウォーター
+# instead of orthographic フィッツワテル). O(1) lookups, no neural deps.
+pip install -e 'git+https://github.com/T-Fizz/translit.git#egg=translit-core[full]'
 ```
 
 ```python
@@ -57,7 +63,7 @@ curl -X POST http://localhost:8080/v1/transliterate \
 | Hindi (Devanagari) | Latin | `indic-transliteration` IAST + diacritic strip + schwa deletion + aspirated-digraph cluster fix |
 | Arabic | Latin | Curated overlay of ~50 common names (rules-based impossible without short vowels) |
 | Thai (Thai script) | Latin | RTGS via `pythainlp` |
-| English (Latin) | Japanese (katakana) | `alkana` dictionary + A–Z acronym fallback (`FBI → エフビーアイ`) + hyphen-name handling |
+| English (Latin) | Japanese (katakana) | `alkana` ~49k name dict → A–Z acronym fallback → CMU dict + ARPABET (`[full]` extra, ~3 MB) → orthographic last-resort. Coverage: 100% (any ASCII English word produces output). |
 
 Plus a `name_order="given-first"` flag that flips ja and ko output to
 older Western convention (`Yamada Taro → Taro Yamada`).

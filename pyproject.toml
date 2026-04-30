@@ -33,6 +33,14 @@ service = [
     "httpx>=0.28,<1",
     "supabase>=2.13,<3",
 ]
+# Press-quality en→ja fallback via CMU Pronouncing Dictionary (~3MB data,
+# 126k English words). Without this the engine falls back to orthographic
+# rules (fast and bundle-light, but lower quality on names like "Fitzwater").
+# Install with `pip install translit-core[full]` for backend services that
+# value O(1) phoneme lookups.
+full = [
+    "cmudict>=1.0",
+]
 test = [
     "pytest",
     "pytest-asyncio",
