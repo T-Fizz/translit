@@ -395,12 +395,15 @@ transliterate("John Smith", "ja")                              # → "ジョン�
     await pyodide.loadPackage("micropip");
     await pyodide.runPythonAsync(`
       import micropip
-      # Pure-Python deps that Pyodide can install via PyPI.
+      # Pure-Python deps that Pyodide can install via PyPI. cmudict is the
+      # [full]-extra dependency that powers press-quality en→ja phoneme
+      # lookups (Fitzwater → フィッツウォーター, not orthographic フィッツワテル).
       await micropip.install([
         "pykakasi",
         "pypinyin",
         "alkana",
         "indic-transliteration",
+        "cmudict",
       ])
     `);
 
