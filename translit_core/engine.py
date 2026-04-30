@@ -535,10 +535,195 @@ def _en_acronym_to_katakana(word: str) -> str | None:
     return "".join(_LETTER_TO_KATAKANA[c.lower()] for c in word)
 
 
+# Best-effort orthographic English → katakana fallback. Used when alkana
+# misses and the input isn't an acronym. Quality varies; English vowel
+# values aren't predictable from spelling (the 'a' in "water" is /ɔ:/,
+# the 'a' in "wagon" is /æ/) so output is roughly phonetic but won't
+# always match press style. Self-contained, pure-Python, works in Pyodide.
+_KATA_VOWELS = ("ア", "イ", "ウ", "エ", "オ")
+# 'y' indexed as 'i' so cy/gy/ny/etc. work like ci/gi/ni when y acts as
+# a vowel (cynthia, gypsy). Bare 'y' as a consonant before another vowel
+# is handled by _KATA_CV["y"] before this lookup fires.
+_VOWEL_INDEX = {"a": 0, "i": 1, "u": 2, "e": 3, "o": 4, "y": 1}
+
+# Consonant + vowel → katakana. Indices match _VOWEL_INDEX (a, i, u, e, o).
+_KATA_CV: dict[str, tuple[str, ...]] = {
+    "k": ("カ", "キ", "ク", "ケ", "コ"),
+    "g": ("ガ", "ギ", "グ", "ゲ", "ゴ"),
+    "s": ("サ", "シ", "ス", "セ", "ソ"),
+    "z": ("ザ", "ジ", "ズ", "ゼ", "ゾ"),
+    "t": ("タ", "ティ", "トゥ", "テ", "ト"),
+    "d": ("ダ", "ディ", "ドゥ", "デ", "ド"),
+    "n": ("ナ", "ニ", "ヌ", "ネ", "ノ"),
+    "h": ("ハ", "ヒ", "フ", "ヘ", "ホ"),
+    "b": ("バ", "ビ", "ブ", "ベ", "ボ"),
+    "p": ("パ", "ピ", "プ", "ペ", "ポ"),
+    "m": ("マ", "ミ", "ム", "メ", "モ"),
+    "y": ("ヤ", "イ", "ユ", "イェ", "ヨ"),
+    "r": ("ラ", "リ", "ル", "レ", "ロ"),
+    "l": ("ラ", "リ", "ル", "レ", "ロ"),
+    "w": ("ワ", "ウィ", "ウ", "ウェ", "ウォ"),
+    "f": ("ファ", "フィ", "フ", "フェ", "フォ"),
+    "v": ("ヴァ", "ヴィ", "ヴ", "ヴェ", "ヴォ"),
+    "j": ("ジャ", "ジ", "ジュ", "ジェ", "ジョ"),
+}
+
+# Two-char digraphs that map to a different sound + vowel.
+_KATA_DIGRAPH_CV: dict[str, tuple[str, ...]] = {
+    "sh": ("シャ", "シ", "シュ", "シェ", "ショ"),
+    "ch": ("チャ", "チ", "チュ", "チェ", "チョ"),
+    "ts": ("ツァ", "ツィ", "ツ", "ツェ", "ツォ"),
+    "ph": _KATA_CV["f"],   # phone → fone sound
+    "th": ("サ", "シ", "ス", "セ", "ソ"),  # simplified to s-row
+    "wh": _KATA_CV["w"],   # whole/where → 'w'
+    "qu": ("クア", "クィ", "ク", "クェ", "クォ"),
+}
+
+# Bare consonants (cluster or end-of-word position). For clusters and
+# word-final consonants Japanese inserts an epenthetic vowel — usually 'u'.
+_KATA_BARE: dict[str, str] = {
+    "k": "ク", "g": "グ", "s": "ス", "z": "ズ", "t": "ト", "d": "ド",
+    "n": "ン", "h": "フ", "b": "ブ", "p": "プ", "m": "ム",
+    "r": "ル", "l": "ル", "f": "フ", "v": "ヴ", "j": "ジ",
+    "w": "ウ", "y": "イ",
+}
+_KATA_BARE_DIGRAPH: dict[str, str] = {
+    "sh": "シュ",
+    "ch": "チ",
+    "ts": "ツ",
+    "tz": "ッツ",   # geminate + tsu (Fitz → フィッツ)
+    "ck": "ック",   # geminate (Stock → ストック)
+    "ph": "フ",
+    "th": "ス",
+    "ng": "ング",   # often 'ng' at word-end
+    "x":  "クス",   # technically 1 char but treat as cluster
+}
+
+# 'g'/'c' before 'e','i','y' usually changes sound in English. Crude
+# but better than nothing for common name patterns (Gerald, Cynthia).
+_PRE_FRONT_VOWEL = {"e", "i", "y"}
+
+
+def _en_phonetic_to_katakana(word: str) -> str | None:
+    """Best-effort orthographic en → katakana. Triggered when alkana misses.
+
+    Walks the word left-to-right consuming consonant-vowel syllables, with
+    digraph (ph/sh/ch/th/ts/tz/ck/ng) and silent-e handling. Output is
+    approximate — English vowel quality varies by phonetic context which
+    spelling alone doesn't reveal — but produces a readable katakana
+    rendering of any ASCII English word. Better than returning None for
+    unknown names.
+    """
+    if not word or not word.isascii():
+        return None
+    word = word.lower()
+    if not all(c.isalpha() or c == "'" for c in word):
+        return None
+    # Drop apostrophes (O'Brien → obrien)
+    word = word.replace("'", "")
+    # Single letters are too ambiguous (letter name? vowel sound?); refuse.
+    if len(word) < 2:
+        return None
+    # Drop trailing silent 'e' (Smithe → Smith, but keep "see" etc.)
+    if (
+        len(word) >= 3
+        and word[-1] == "e"
+        and word[-2] not in "aeiouy"
+        and any(c in "aeiouy" for c in word[:-1])
+    ):
+        word = word[:-1]
+
+    out: list[str] = []
+    i = 0
+    n = len(word)
+    while i < n:
+        c = word[i]
+        nxt = word[i + 1] if i + 1 < n else ""
+        nxt2 = word[i + 2] if i + 2 < n else ""
+        digraph = c + nxt
+
+        # Silent 'k' before 'n' at word start (knight → night, knot → not)
+        if i == 0 and digraph == "kn":
+            i += 1  # skip the silent k; 'n' handled next iteration
+            continue
+        # Silent 'gh' after a vowel and before consonant or end (knight, night,
+        # light, weight). Approximated: drop the 'gh' entirely.
+        if digraph == "gh" and i > 0 and word[i - 1] in "aeiouy" and nxt2 not in _VOWEL_INDEX:
+            i += 2
+            continue
+
+        # 'qu' + vowel
+        if digraph == "qu" and nxt2 in _VOWEL_INDEX:
+            out.append(_KATA_DIGRAPH_CV["qu"][_VOWEL_INDEX[nxt2]])
+            i += 3
+            continue
+
+        # Two-char digraph + vowel (sh, ch, ts, ph, th, wh)
+        if digraph in _KATA_DIGRAPH_CV and nxt2 in _VOWEL_INDEX:
+            out.append(_KATA_DIGRAPH_CV[digraph][_VOWEL_INDEX[nxt2]])
+            i += 3
+            continue
+
+        # Two-char digraph at end / before consonant (no vowel follows)
+        if digraph in _KATA_BARE_DIGRAPH and nxt2 not in _VOWEL_INDEX:
+            out.append(_KATA_BARE_DIGRAPH[digraph])
+            i += 2
+            continue
+
+        # 'g'/'c' before front vowel (e/i/y) → /dʒ/ or /s/
+        if c == "g" and nxt in _PRE_FRONT_VOWEL:
+            out.append(_KATA_CV["j"][_VOWEL_INDEX[nxt]])
+            i += 2
+            continue
+        if c == "c" and nxt in _PRE_FRONT_VOWEL:
+            out.append(_KATA_CV["s"][_VOWEL_INDEX[nxt]])
+            i += 2
+            continue
+        # 'c' before back vowel/consonant → /k/
+        if c == "c":
+            if nxt in _VOWEL_INDEX:
+                out.append(_KATA_CV["k"][_VOWEL_INDEX[nxt]])
+                i += 2
+                continue
+            out.append(_KATA_BARE["k"])
+            i += 1
+            continue
+
+        # 'x' → kusu cluster
+        if c == "x":
+            out.append(_KATA_BARE_DIGRAPH["x"])
+            i += 1
+            continue
+
+        # Consonant + vowel
+        if c in _KATA_CV and nxt in _VOWEL_INDEX:
+            out.append(_KATA_CV[c][_VOWEL_INDEX[nxt]])
+            i += 2
+            continue
+
+        # Bare vowel
+        if c in _VOWEL_INDEX:
+            out.append(_KATA_VOWELS[_VOWEL_INDEX[c]])
+            i += 1
+            continue
+
+        # Bare consonant (cluster or word-end)
+        if c in _KATA_BARE:
+            out.append(_KATA_BARE[c])
+            i += 1
+            continue
+
+        # Unknown character — skip
+        i += 1
+
+    return "".join(out) if out else None
+
+
 def _alkana_lookup(word: str) -> str | None:
     """Look up an English word in alkana with progressive cleanup.
 
-    Tries: exact match → trailing-punctuation-stripped → acronym fallback.
+    Tries: exact match → trailing-punctuation-stripped → acronym fallback
+    → best-effort phonetic en → katakana fallback (any unknown word).
     """
     try:
         import alkana
@@ -553,7 +738,12 @@ def _alkana_lookup(word: str) -> str | None:
         if result is not None:
             return result
         word = cleaned
-    return _en_acronym_to_katakana(word)
+    acronym = _en_acronym_to_katakana(word)
+    if acronym is not None:
+        return acronym
+    # Last-ditch: orthographic phonetic fallback. Quality varies but
+    # produces a readable katakana for any ASCII English input.
+    return _en_phonetic_to_katakana(word)
 
 
 # --- romanizers -------------------------------------------------------------

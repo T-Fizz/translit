@@ -234,9 +234,10 @@ def test_acronym_known_to_alkana_uses_alkana():
     assert transliterate("IBM", "ja") == "アイビーエム"
 
 
-def test_single_letter_does_not_trigger_acronym_fallback():
-    """Single uppercase letters are too ambiguous (pronoun? abbreviation?)
-    — fail soft rather than guess."""
+def test_single_letter_does_not_trigger_fallback():
+    """Single letters are too ambiguous for any fallback (letter name?
+    vowel sound? pronoun?). Both the acronym path and the phonetic
+    fallback refuse single-character input."""
     assert transliterate("A", "ja") is None
     assert transliterate("I", "ja") is None
 
@@ -256,9 +257,13 @@ def test_hyphenated_name():
     assert transliterate("Mary-Jane", "ja") == "メアリー・ジェイン"
 
 
-def test_hyphenated_name_with_unknown_piece():
-    """Unknown hyphen-separated piece causes whole-input None (fail-soft)."""
-    assert transliterate("Mary-Joaquin", "ja") is None
+def test_hyphenated_name_with_unknown_piece_uses_fallback():
+    """Unknown hyphen-separated pieces are romanized via the phonetic
+    fallback. The result joins both pieces with ・ as usual."""
+    out = transliterate("Mary-Joaquin", "ja")
+    assert out is not None
+    assert "・" in out
+    assert out.startswith("メアリー")  # Mary from alkana
 
 
 def test_acronym_within_multi_word():

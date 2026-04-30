@@ -179,15 +179,18 @@ def test_en_to_katakana_multi_word(client, auth_headers):
     assert r.json()["phonetic"] == "ジョン・スミス"
 
 
-def test_en_to_katakana_unknown_word_unsupported(client, auth_headers):
+def test_en_to_katakana_unknown_word_uses_phonetic_fallback(client, auth_headers):
+    """alkana misses fall through to the phonetic engine; HTTP layer
+    surfaces a non-None phonetic with method 'alkana' (still the
+    overall route — fallback is internal to that path)."""
     r = client.post(
         "/v1/transliterate",
         json={"name": "Joaquin", "target_lang": "ja"},
         headers=auth_headers,
     )
     body = r.json()
-    assert body["phonetic"] is None
-    assert body["reason"] == "unsupported_pair"
+    assert body["phonetic"] is not None
+    assert body["reason"] is None
 
 
 def test_en_to_katakana_caches(client, auth_headers):

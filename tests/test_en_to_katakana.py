@@ -69,25 +69,39 @@ def test_three_word_name():
     assert out.startswith("メアリー・")
 
 
-# --- Fail-soft: any unknown word → None entire response --------------------
+# --- Phonetic fallback: alkana misses go through the rules-based engine ----
 
-def test_unknown_word_returns_none():
-    """Joaquin (Spanish-origin name) is not in alkana's dictionary."""
-    assert transliterate("Joaquin", "ja") is None
-
-
-def test_partial_miss_returns_none_not_partial():
-    """Mixing a known word with an unknown one returns None entirely
-    rather than '<known>・None' garble."""
-    assert transliterate("John Joaquin", "ja") is None
+def test_unknown_word_uses_phonetic_fallback():
+    """Joaquin (Spanish-origin name) isn't in alkana, but the phonetic
+    fallback produces a katakana approximation rather than None."""
+    out = transliterate("Joaquin", "ja")
+    assert out is not None
+    assert all(0x30A0 <= ord(c) <= 0x30FF or c == "・" for c in out)
 
 
-# --- Diacritics & punctuation: alkana is ASCII-only ------------------------
+def test_partial_miss_now_handled_by_fallback():
+    """Mixing alkana-known and alkana-unknown words now produces output
+    via fallback (alkana for the known word, phonetic engine for the
+    unknown). Joined with ・ as usual."""
+    out = transliterate("John Joaquin", "ja")
+    assert out is not None
+    assert "・" in out
+    assert out.startswith("ジョン")  # John from alkana
 
-@pytest.mark.parametrize("name", ["Müller", "café", "O'Brien"])
-def test_non_ascii_or_unsupported_punctuation(name):
-    """alkana's dict is ASCII-only — diacritics and apostrophe-prefixed
-    names miss. (Mary-Jane works because we split on hyphens.)"""
+
+def test_apostrophe_names_handled_via_fallback():
+    """Names with apostrophes (O'Brien, D'Angelo) now go through the
+    phonetic fallback (apostrophe stripped, then orthographic mapping)."""
+    assert transliterate("O'Brien", "ja") is not None
+
+
+# --- Diacritics still excluded ---------------------------------------------
+
+@pytest.mark.parametrize("name", ["Müller", "café"])
+def test_non_ascii_returns_none(name):
+    """Diacritics aren't ASCII; phonetic engine refuses them. A name
+    dictionary or normalization layer would be needed to handle these
+    properly (Müller → ミューラー)."""
     assert transliterate(name, "ja") is None
 
 
